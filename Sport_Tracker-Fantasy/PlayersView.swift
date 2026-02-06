@@ -24,7 +24,7 @@ struct PlayersView: View {
         case topPerformers = "Top Performers"
         case name = "A-Z"
         case team = "Team"
-        case ppg = "Points"
+        case fppg = "Fantasy Points"
     }
     
     var body: some View {
@@ -185,7 +185,7 @@ struct PlayersView: View {
                                         player: playerWithStats.player,
                                         averages: playerWithStats.averages,
                                         liveStats: liveStats,
-                                        rank: sortOption == .topPerformers && index < 30 ? index + 1 : nil,
+                                        rank: sortOption == .topPerformers && index < 100 ? index + 1 : nil,
                                         isFavorite: isFavorite,
                                         onFavoriteToggle: {
                                             toggleFavorite(playerWithStats.player)
@@ -228,10 +228,6 @@ struct PlayersView: View {
                 if !favoritePlayerIds.isEmpty {
                     liveManager.startTracking(playerIds: favoritePlayerIds)
                 }
-            }
-            .onDisappear {
-                // Pause when view disappears (user navigates away)
-                liveManager.pauseAutoRefresh()
             }
         }
     }
@@ -291,9 +287,6 @@ struct PlayersView: View {
             applyFiltersAndSort()
         } catch {
             errorMessage = "Failed to load players.\nPlease check your connection."
-            #if DEBUG
-            print("Load players error: \(error)")
-            #endif
         }
         
         isLoading = false
@@ -309,11 +302,7 @@ struct PlayersView: View {
         do {
             playersWithStats = try await LiveScoresAPI.shared.fetchPlayersWithStats()
             applyFiltersAndSort()
-        } catch {
-            #if DEBUG
-            print("Refresh error: \(error)")
-            #endif
-        }
+        } catch { }
     }
     
     private func applyFiltersAndSort() {
@@ -329,16 +318,31 @@ struct PlayersView: View {
             }
         }
         
-        // Sort
+        // Sort (with secondary sort by name for stability)
         switch sortOption {
         case .topPerformers:
-            result.sort { $0.fantasyScore > $1.fantasyScore }
+            result.sort { p1, p2 in
+                if p1.fantasyScore != p2.fantasyScore {
+                    return p1.fantasyScore > p2.fantasyScore
+                }
+                return p1.player.fullName < p2.player.fullName
+            }
         case .name:
             result.sort { $0.player.lastName < $1.player.lastName }
         case .team:
-            result.sort { $0.player.teamFullName < $1.player.teamFullName }
-        case .ppg:
-            result.sort { $0.ppg > $1.ppg }
+            result.sort { p1, p2 in
+                if p1.player.teamFullName != p2.player.teamFullName {
+                    return p1.player.teamFullName < p2.player.teamFullName
+                }
+                return p1.player.fullName < p2.player.fullName
+            }
+        case .fppg:
+            result.sort { p1, p2 in
+                if p1.fantasyScore != p2.fantasyScore {
+                    return p1.fantasyScore > p2.fantasyScore
+                }
+                return p1.player.fullName < p2.player.fullName
+            }
         }
         
         filteredPlayers = result
@@ -430,7 +434,7 @@ struct PlayerRowView: View {
                                 .foregroundStyle(Color(hex: "8E8E93"))
                         }
                         
-                        // Show live stats or PPG
+                        // Show live stats or FPPG (Fantasy Points Per Game)
                         if let live = liveStats {
                             Text("•")
                                 .foregroundStyle(Color(hex: "3A3A3C"))
@@ -440,7 +444,7 @@ struct PlayerRowView: View {
                         } else if let avg = averages, avg.gamesPlayed > 0 {
                             Text("•")
                                 .foregroundStyle(Color(hex: "3A3A3C"))
-                            Text(String(format: "%.1f PPG", avg.pts))
+                            Text(String(format: "%.1f FPPG", avg.fantasyScore))
                                 .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(Color(hex: "FF6B35"))
                         }

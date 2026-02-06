@@ -10,11 +10,35 @@ import SwiftUI
 struct HomeView: View {
     @Binding var favoritePlayerIds: Set<Int>
     
+    @StateObject private var liveManager = LiveGameManager.shared
     @State private var favoritePlayers: [NBAPlayer] = []
     @State private var playerStats: [Int: [PlayerGameStats]] = [:] // playerId -> stats
     @State private var playerAverages: [Int: SeasonAverages] = [:] // playerId -> averages
     @State private var isLoading = true
     @State private var selectedPlayer: NBAPlayer?
+    
+    /// Sorted players with live players at the top
+    private var sortedFavoritePlayers: [NBAPlayer] {
+        favoritePlayers.sorted { player1, player2 in
+            let isLive1 = liveManager.isPlayerLive(player1.id)
+            let isLive2 = liveManager.isPlayerLive(player2.id)
+            
+            // Live players come first
+            if isLive1 != isLive2 {
+                return isLive1
+            }
+            
+            // Among live players, sort by points (higher first)
+            if isLive1 && isLive2 {
+                let pts1 = liveManager.getLiveStats(for: player1.id)?.points ?? 0
+                let pts2 = liveManager.getLiveStats(for: player2.id)?.points ?? 0
+                return pts1 > pts2
+            }
+            
+            // Non-live players maintain original order
+            return false
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -53,9 +77,17 @@ struct HomeView: View {
             .task {
                 await loadFavoritePlayers()
             }
-            .onChange(of: favoritePlayerIds) { _ in
+            .onChange(of: favoritePlayerIds) { newIds in
                 Task {
                     await loadFavoritePlayers()
+                }
+                // Update live tracking when favorites change
+                liveManager.updateTrackedPlayers(newIds)
+            }
+            .onAppear {
+                // Start or resume live tracking when home screen appears
+                if !favoritePlayerIds.isEmpty {
+                    liveManager.startTracking(playerIds: favoritePlayerIds)
                 }
             }
         }
@@ -84,20 +116,54 @@ struct HomeView: View {
                 
                 Spacer()
                 
-                // Stats badge
-                if !favoritePlayers.isEmpty {
-                    VStack(spacing: 2) {
-                        Text("\(favoritePlayers.count)")
-                            .font(.system(size: 28, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color(hex: "FF6B35"))
-                        Text("favorites")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color(hex: "8E8E93"))
+                // Live status and stats badge
+                HStack(spacing: 12) {
+                    // Live indicator
+                    if !liveManager.liveGames.isEmpty {
+                        Button {
+                            Task {
+                                await liveManager.refresh()
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if liveManager.isRefreshing {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .tint(Color.white)
+                                } else {
+                                    Circle()
+                                        .fill(Color(hex: "FF3B30"))
+                                        .frame(width: 8, height: 8)
+                                        .modifier(PulsingAnimation())
+                                }
+                                
+                                Text("\(liveManager.liveGames.count) LIVE")
+                                    .font(.system(size: 12, weight: .heavy))
+                                    .foregroundStyle(Color(hex: "FF3B30"))
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color(hex: "FF3B30").opacity(0.15))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(hex: "1C1C1E"))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    
+                    // Stats badge
+                    if !favoritePlayers.isEmpty {
+                        VStack(spacing: 2) {
+                            Text("\(favoritePlayers.count)")
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
+                                .foregroundStyle(Color(hex: "FF6B35"))
+                            Text("favorites")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Color(hex: "8E8E93"))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(Color(hex: "1C1C1E"))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    }
                 }
             }
         }
@@ -181,15 +247,29 @@ struct HomeView: View {
                 
                 Spacer()
                 
-                Image(systemName: "star.fill")
-                    .foregroundStyle(Color(hex: "FFD700"))
+                // Show live player count if any
+                let liveCount = favoritePlayers.filter { liveManager.isPlayerLive($0.id) }.count
+                if liveCount > 0 {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color(hex: "FF3B30"))
+                            .frame(width: 6, height: 6)
+                        Text("\(liveCount) playing")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(hex: "FF3B30"))
+                    }
+                } else {
+                    Image(systemName: "star.fill")
+                        .foregroundStyle(Color(hex: "FFD700"))
+                }
             }
             
-            ForEach(favoritePlayers) { player in
+            ForEach(sortedFavoritePlayers) { player in
                 FavoritePlayerCard(
                     player: player,
                     averages: playerAverages[player.id],
                     recentStats: playerStats[player.id] ?? [],
+                    liveStats: liveManager.getLiveStats(for: player.id),
                     onRemove: { toggleFavorite(player) }
                 )
                 .onTapGesture {
@@ -231,15 +311,9 @@ struct HomeView: View {
                         playerAverages[player.id] = avg
                     }
                 } catch {
-                    #if DEBUG
-                    print("Failed to load stats for player \(player.id):", error)
-                    #endif
                 }
             }
         } catch {
-            #if DEBUG
-            print("Failed to load favorite players:", error)
-            #endif
         }
         
         isLoading = false
@@ -260,19 +334,55 @@ struct FavoritePlayerCard: View {
     let player: NBAPlayer
     let averages: SeasonAverages?
     let recentStats: [PlayerGameStats]
+    let liveStats: LivePlayerStat?
     let onRemove: () -> Void
+    
+    private var isLive: Bool {
+        liveStats != nil
+    }
     
     var body: some View {
         VStack(spacing: 16) {
+            // Live Game Banner (if playing)
+            if let live = liveStats {
+                liveGameBanner(live)
+            }
+            
             // Player Info Row
             HStack(spacing: 16) {
-                // Player Photo
-                PlayerPhotoView(player: player, size: 70)
+                // Player Photo with live indicator
+                ZStack(alignment: .topTrailing) {
+                    PlayerPhotoView(player: player, size: 70)
+                    
+                    if isLive {
+                        Circle()
+                            .fill(Color(hex: "FF3B30"))
+                            .frame(width: 14, height: 14)
+                            .overlay(
+                                Circle()
+                                    .stroke(Color(hex: "1C1C1E"), lineWidth: 2)
+                            )
+                            .modifier(PulsingAnimation())
+                            .offset(x: 2, y: -2)
+                    }
+                }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(player.fullName)
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundStyle(Color.white)
+                    HStack(spacing: 8) {
+                        Text(player.fullName)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(Color.white)
+                        
+                        if isLive {
+                            Text("LIVE")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(Color.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: "FF3B30"))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
                     
                     HStack(spacing: 8) {
                         Text(player.teamAbbreviation)
@@ -288,8 +398,17 @@ struct FavoritePlayerCard: View {
                         }
                     }
                     
-                    // Season averages
-                    if let avg = averages, avg.gamesPlayed > 0 {
+                    // Show live stats or season averages
+                    if let live = liveStats {
+                        // Live stats
+                        HStack(spacing: 12) {
+                            liveStatBadge(value: "\(live.points)", label: "PTS", highlight: true)
+                            liveStatBadge(value: "\(live.rebounds)", label: "REB")
+                            liveStatBadge(value: "\(live.assists)", label: "AST")
+                        }
+                        .padding(.top, 4)
+                    } else if let avg = averages, avg.gamesPlayed > 0 {
+                        // Season averages
                         HStack(spacing: 12) {
                             statBadge(value: String(format: "%.1f", avg.pts), label: "PPG")
                             statBadge(value: String(format: "%.1f", avg.reb), label: "RPG")
@@ -314,40 +433,42 @@ struct FavoritePlayerCard: View {
                 .buttonStyle(.plain)
             }
             
-            // Recent Stats
-            if !recentStats.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("RECENT GAMES")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color(hex: "8E8E93"))
-                    
-                    HStack(spacing: 8) {
-                        ForEach(recentStats.prefix(3)) { stat in
-                            miniStatCard(stat)
+            // Recent Stats (only show if not live)
+            if !isLive {
+                if !recentStats.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("RECENT GAMES")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Color(hex: "8E8E93"))
+                        
+                        HStack(spacing: 8) {
+                            ForEach(recentStats.prefix(3)) { stat in
+                                miniStatCard(stat)
+                            }
                         }
                     }
+                } else {
+                    HStack(spacing: 8) {
+                        Image(systemName: "chart.bar.xaxis")
+                            .foregroundStyle(Color(hex: "3A3A3C"))
+                        Text("No recent stats available")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color(hex: "8E8E93"))
+                    }
+                    .padding(.top, 4)
                 }
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "chart.bar.xaxis")
-                        .foregroundStyle(Color(hex: "3A3A3C"))
-                    Text("No recent stats available")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color(hex: "8E8E93"))
-                }
-                .padding(.top, 4)
             }
             
             // View Details hint
             HStack {
                 Spacer()
                 HStack(spacing: 4) {
-                    Text("View details")
+                    Text(isLive ? "Watch live" : "View details")
                         .font(.system(size: 13, weight: .medium))
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .foregroundStyle(Color(hex: "FF6B35"))
+                .foregroundStyle(isLive ? Color(hex: "FF3B30") : Color(hex: "FF6B35"))
             }
         }
         .padding(20)
@@ -357,15 +478,76 @@ struct FavoritePlayerCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
-                            LinearGradient(
+                            isLive ?
+                            AnyShapeStyle(Color(hex: "FF3B30").opacity(0.5)) :
+                            AnyShapeStyle(LinearGradient(
                                 colors: [Color(hex: player.teamPrimaryColor).opacity(0.3), Color.clear],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
+                            )),
+                            lineWidth: isLive ? 2 : 1
                         )
                 )
         )
+    }
+    
+    // MARK: - Live Game Banner
+    
+    private func liveGameBanner(_ live: LivePlayerStat) -> some View {
+        HStack(spacing: 12) {
+            // Game clock
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color(hex: "FF3B30"))
+                    .frame(width: 8, height: 8)
+                    .modifier(PulsingAnimation())
+                
+                Text(live.gameClockDisplay)
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color.white)
+            }
+            
+            Spacer()
+            
+            // Score
+            HStack(spacing: 8) {
+                Text(live.awayTeamCode)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(!live.isHomeTeam ? Color(hex: "FF6B35") : Color(hex: "8E8E93"))
+                
+                Text("\(live.awayScore)")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.white)
+                
+                Text("-")
+                    .foregroundStyle(Color(hex: "6E6E73"))
+                
+                Text("\(live.homeScore)")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Color.white)
+                
+                Text(live.homeTeamCode)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(live.isHomeTeam ? Color(hex: "FF6B35") : Color(hex: "8E8E93"))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color(hex: "FF3B30").opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+    
+    // MARK: - Live Stat Badge
+    
+    private func liveStatBadge(value: String, label: String, highlight: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(highlight ? Color(hex: "FF3B30") : Color.white)
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color(hex: "8E8E93"))
+        }
     }
     
     private func statBadge(value: String, label: String) -> some View {

@@ -495,10 +495,6 @@ struct PlayerDetailView: View {
             recentStats = stats
             seasonAverages = averages
             
-            #if DEBUG
-            print("✅ Loaded \(stats.count) games and averages for \(player.fullName)")
-            #endif
-            
         } catch let urlError as URLError {
             // Network-specific errors
             switch urlError.code {
@@ -509,10 +505,6 @@ struct PlayerDetailView: View {
             default:
                 errorMessage = "Network error.\nPlease try again."
             }
-            #if DEBUG
-            print("Network error loading player data:", urlError)
-            #endif
-            
         } catch let nsError as NSError {
             // API-specific errors
             if nsError.code == 429 {
@@ -520,15 +512,8 @@ struct PlayerDetailView: View {
             } else {
                 errorMessage = "Unable to load stats.\nPlayer may not have played recently."
             }
-            #if DEBUG
-            print("API error loading player data:", nsError)
-            #endif
-            
         } catch {
             errorMessage = "Unable to load stats.\nPlease try again."
-            #if DEBUG
-            print("Error loading player data:", error)
-            #endif
         }
         
         isLoading = false
@@ -556,7 +541,26 @@ struct GameStatCard: View {
     /// Get opponent team abbreviation
     private var opponentAbbr: String {
         let playerTeamIsHome = stat.team.id == stat.game.homeTeamId
-        // We don't have opponent abbr directly, but we can show vs/@ indicator
+        if playerTeamIsHome {
+            return stat.game.visitorTeamAbbreviation
+        } else {
+            return stat.game.homeTeamAbbreviation
+        }
+    }
+    
+    /// Get opponent team full name
+    private var opponentName: String {
+        let playerTeamIsHome = stat.team.id == stat.game.homeTeamId
+        if playerTeamIsHome {
+            return stat.game.visitorTeamName
+        } else {
+            return stat.game.homeTeamName
+        }
+    }
+    
+    /// Home or away indicator
+    private var homeAwayIndicator: String {
+        let playerTeamIsHome = stat.team.id == stat.game.homeTeamId
         return playerTeamIsHome ? "vs" : "@"
     }
     
@@ -599,34 +603,35 @@ struct GameStatCard: View {
     // MARK: - Main Row
     
     private var mainRow: some View {
-        HStack(spacing: 12) {
-            // Date & Result
-            VStack(alignment: .leading, spacing: 4) {
-                Text(stat.formattedDate)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color.white)
+        HStack(spacing: 16) {
+            // Result & Opponent (compact left section)
+            VStack(alignment: .leading, spacing: 6) {
+                // Opponent team with home/away
+                HStack(spacing: 3) {
+                    Text(homeAwayIndicator)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color(hex: "6E6E73"))
+                    
+                    Text(opponentAbbr)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(hex: "AEAEB2"))
+                }
                 
-                HStack(spacing: 4) {
-                    // W/L Badge
+                // W/L Badge with score
+                HStack(spacing: 6) {
                     Text(isWin ? "W" : "L")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(isWin ? Color(hex: "34C759") : Color(hex: "FF3B30"))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            (isWin ? Color(hex: "34C759") : Color(hex: "FF3B30")).opacity(0.15)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
                     
                     Text(scoreDisplay)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color(hex: "8E8E93"))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.white)
                 }
             }
-            .frame(width: 70, alignment: .leading)
+            .frame(width: 72, alignment: .leading)
             
-            // Key Stats
-            HStack(spacing: 0) {
+            // Key Stats (larger, more prominent)
+            HStack(spacing: 4) {
                 statPill(value: "\(stat.pts ?? 0)", label: "PTS", highlight: true)
                 statPill(value: "\(stat.reb ?? 0)", label: "REB")
                 statPill(value: "\(stat.ast ?? 0)", label: "AST")
@@ -637,25 +642,25 @@ struct GameStatCard: View {
             
             // Expand Indicator
             Image(systemName: "chevron.down")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color(hex: "8E8E93"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color(hex: "6E6E73"))
                 .rotationEffect(.degrees(isExpanded ? 180 : 0))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
     
     private func statPill(value: String, label: String, highlight: Bool = false) -> some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 3) {
             Text(value)
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 20, weight: .bold, design: .rounded))
                 .foregroundStyle(highlight ? Color(hex: "FF6B35") : Color.white)
             
             Text(label)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(Color(hex: "6E6E73"))
         }
-        .frame(width: 44)
+        .frame(width: 48)
     }
     
     // MARK: - Expanded Details

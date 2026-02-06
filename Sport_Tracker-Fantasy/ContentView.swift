@@ -64,9 +64,6 @@ struct ContentView: View {
             let decoded = try JSONDecoder().decode(Set<Int>.self, from: favoritePlayerIdsData)
             favoritePlayerIds = decoded
         } catch {
-            #if DEBUG
-            print("Failed to decode favorites:", error)
-            #endif
         }
     }
     
@@ -75,9 +72,6 @@ struct ContentView: View {
             let encoded = try JSONEncoder().encode(favorites)
             favoritePlayerIdsData = encoded
         } catch {
-            #if DEBUG
-            print("Failed to encode favorites:", error)
-            #endif
         }
     }
 }

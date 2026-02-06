@@ -9,455 +9,6 @@
 import Foundation
 import Combine
 
-// MARK: - Player Models
-
-struct NBAPlayer: Identifiable, Codable, Hashable {
-    let id: Int
-    let firstName: String
-    let lastName: String
-    let position: String
-    let height: String?
-    let weight: String?
-    let jerseyNumber: String?
-    let college: String?
-    let country: String?
-    let draftYear: Int?
-    let draftRound: Int?
-    let draftNumber: Int?
-    let team: NBATeam?
-    
-    var fullName: String {
-        "\(firstName) \(lastName)"
-    }
-    
-    /// Safe team abbreviation
-    var teamAbbreviation: String {
-        team?.abbreviation ?? "FA"
-    }
-    
-    /// Safe team full name
-    var teamFullName: String {
-        team?.fullName ?? "Free Agent"
-    }
-    
-    /// Safe team primary color
-    var teamPrimaryColor: String {
-        team?.primaryColor ?? "FF6B35"
-    }
-    
-    /// Safe team secondary color
-    var teamSecondaryColor: String {
-        team?.secondaryColor ?? "F7931E"
-    }
-    
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-    
-    static func == (lhs: NBAPlayer, rhs: NBAPlayer) -> Bool {
-        lhs.id == rhs.id
-    }
-}
-
-struct NBATeam: Codable, Hashable {
-    let id: Int
-    let conference: String
-    let division: String
-    let city: String
-    let name: String
-    let fullName: String
-    let abbreviation: String
-    
-    /// Team primary color for avatar backgrounds
-    var primaryColor: String {
-        TeamColors.primary[abbreviation] ?? "FF6B35"
-    }
-    
-    var secondaryColor: String {
-        TeamColors.secondary[abbreviation] ?? "F7931E"
-    }
-}
-
-struct PlayerGameStats: Identifiable, Codable {
-    let id: Int
-    let min: String?
-    let pts: Int?
-    let reb: Int?
-    let ast: Int?
-    let stl: Int?
-    let blk: Int?
-    let turnover: Int?
-    let fgm: Int?
-    let fga: Int?
-    let fg3m: Int?
-    let fg3a: Int?
-    let ftm: Int?
-    let fta: Int?
-    let pf: Int?
-    let game: GameInfo
-    let player: PlayerInfo
-    let team: TeamInfo
-    
-    struct GameInfo: Codable {
-        let id: Int
-        let date: String
-        let homeTeamId: Int
-        let visitorTeamId: Int
-        let homeTeamScore: Int
-        let visitorTeamScore: Int
-        let season: Int
-        let status: String
-    }
-    
-    struct PlayerInfo: Codable {
-        let id: Int
-        let firstName: String
-        let lastName: String
-        let position: String
-        let teamId: Int?
-    }
-    
-    struct TeamInfo: Codable {
-        let id: Int
-        let abbreviation: String
-        let fullName: String
-    }
-    
-    var formattedDate: String {
-        // API-Sports format: "2024-01-15T00:00:00.000Z"
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
-        if let date = dateFormatter.date(from: game.date) {
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateFormat = "MMM d"
-            return displayFormatter.string(from: date)
-        }
-        // Try alternate format
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        if let date = dateFormatter.date(from: String(game.date.prefix(10))) {
-            let displayFormatter = DateFormatter()
-            displayFormatter.dateFormat = "MMM d"
-            return displayFormatter.string(from: date)
-        }
-        return game.date.prefix(10).description
-    }
-    
-    var minutes: String {
-        guard let min = min, !min.isEmpty else { return "0" }
-        // Format like "32:45" -> "32"
-        if let colonIndex = min.firstIndex(of: ":") {
-            return String(min[..<colonIndex])
-        }
-        return min
-    }
-}
-
-struct SeasonAverages: Identifiable {
-    let id = UUID()
-    let playerId: Int
-    let pts: Double
-    let reb: Double
-    let ast: Double
-    let stl: Double
-    let blk: Double
-    let gamesPlayed: Int
-    let min: String
-    let fgPct: Double
-    let fg3Pct: Double
-    let ftPct: Double
-    
-    /// Fantasy score calculation (simple formula)
-    var fantasyScore: Double {
-        pts + (reb * 1.2) + (ast * 1.5) + (stl * 3) + (blk * 3)
-    }
-}
-
-/// Holds player with their season averages for sorting
-struct PlayerWithStats: Identifiable {
-    let player: NBAPlayer
-    let averages: SeasonAverages?
-    
-    var id: Int { player.id }
-    
-    var fantasyScore: Double {
-        averages?.fantasyScore ?? 0
-    }
-    
-    var ppg: Double {
-        averages?.pts ?? 0
-    }
-}
-
-// MARK: - Team Colors
-
-struct TeamColors {
-    static let primary: [String: String] = [
-        "ATL": "E03A3E", "BOS": "007A33", "BKN": "000000", "CHA": "1D1160",
-        "CHI": "CE1141", "CLE": "860038", "DAL": "00538C", "DEN": "0E2240",
-        "DET": "C8102E", "GSW": "1D428A", "HOU": "CE1141", "IND": "002D62",
-        "LAC": "C8102E", "LAL": "552583", "MEM": "5D76A9", "MIA": "98002E",
-        "MIL": "00471B", "MIN": "0C2340", "NOP": "0C2340", "NYK": "006BB6",
-        "OKC": "007AC1", "ORL": "0077C0", "PHI": "006BB6", "PHX": "1D1160",
-        "POR": "E03A3E", "SAC": "5A2D81", "SAS": "C4CED4", "TOR": "CE1141",
-        "UTA": "002B5C", "WAS": "002B5C"
-    ]
-    
-    static let secondary: [String: String] = [
-        "ATL": "C1D32F", "BOS": "BA9653", "BKN": "FFFFFF", "CHA": "00788C",
-        "CHI": "000000", "CLE": "041E42", "DAL": "002B5E", "DEN": "FEC524",
-        "DET": "1D42BA", "GSW": "FFC72C", "HOU": "000000", "IND": "FDBB30",
-        "LAC": "1D428A", "LAL": "FDB927", "MEM": "12173F", "MIA": "F9A01B",
-        "MIL": "EEE1C6", "MIN": "236192", "NOP": "C8102E", "NYK": "F58426",
-        "OKC": "EF3B24", "ORL": "C4CED4", "PHI": "ED174C", "PHX": "E56020",
-        "POR": "000000", "SAC": "63727A", "SAS": "000000", "TOR": "000000",
-        "UTA": "00471B", "WAS": "E31837"
-    ]
-}
-
-// MARK: - Player Photo Service
-
-/// Remote database response structure
-struct RemotePlayerDatabase: Codable {
-    let version: String
-    let lastUpdated: String
-    let players: [String: Int]  // "firstname_lastname" -> NBA.com ID
-}
-
-/// Service to get player headshot URLs from NBA.com CDN
-/// Fetches player ID database from a remote JSON file
-actor PlayerPhotoService {
-    static let shared = PlayerPhotoService()
-    
-    // MARK: - Configuration
-    
-    /// URL to your hosted JSON file containing player IDs
-    private let remoteDbUrl: String? = "https://raw.githubusercontent.com/ManasAyyalaraju/NBA_Player_ID-s/main/nba_player_ids.json"
-    
-    /// Local cache of player IDs (name -> NBA.com ID)
-    private var playerIdCache: [String: Int] = [:]
-    
-    /// Last database fetch time
-    private var lastFetched: Date?
-    
-    /// Whether currently fetching
-    private var isFetching = false
-    
-    /// File URL for local cache
-    private var localCacheURL: URL {
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return documentsPath.appendingPathComponent("nba_player_ids_cache.json")
-    }
-    
-    private init() {
-        // Load from local cache first (instant)
-        loadLocalCache()
-        
-        // Then fetch remote in background
-        Task {
-            await fetchRemoteDatabase()
-        }
-    }
-    
-    // MARK: - Public API
-    
-    /// Get a headshot URL for a player
-    func getHeadshotURLWithLookup(firstName: String, lastName: String, teamAbbr: String = "") async -> URL? {
-        // Ensure we have data
-        if playerIdCache.isEmpty {
-            await fetchRemoteDatabase()
-        }
-        
-        // Normalize name for lookup
-        let cacheKey = normalizeKey(firstName: firstName, lastName: lastName)
-        
-        // Try exact match
-        if let nbaId = playerIdCache[cacheKey] {
-            return URL(string: "https://cdn.nba.com/headshots/nba/latest/260x190/\(nbaId).png")
-        }
-        
-        // Try simplified match (without special chars)
-        let simplifiedKey = simplifyKey(cacheKey)
-        for (key, nbaId) in playerIdCache {
-            if simplifyKey(key) == simplifiedKey {
-                return URL(string: "https://cdn.nba.com/headshots/nba/latest/260x190/\(nbaId).png")
-            }
-        }
-        
-        // Fall back to UI Avatars
-        return getFallbackAvatarURL(firstName: firstName, lastName: lastName, teamAbbr: teamAbbr)
-    }
-    
-    /// Force refresh from remote
-    func refreshDatabase() async {
-        await fetchRemoteDatabase(force: true)
-    }
-    
-    /// Get database status
-    func getDatabaseStatus() -> (playerCount: Int, lastFetched: Date?) {
-        return (playerIdCache.count, lastFetched)
-    }
-    
-    /// Clear local cache
-    func clearCache() {
-        playerIdCache.removeAll()
-        lastFetched = nil
-        try? FileManager.default.removeItem(at: localCacheURL)
-        print("🗑️ Player photo cache cleared")
-    }
-    
-    /// Get all verified player names from the database
-    func getVerifiedPlayerNames() -> Set<String> {
-        if playerIdCache.isEmpty {
-            loadEmbeddedFallback()
-        }
-        
-        var names = Set<String>()
-        for key in playerIdCache.keys {
-            names.insert(key)
-            names.insert(simplifyKey(key))
-        }
-        return names
-    }
-    
-    // MARK: - Remote Database Fetching
-    
-    private func fetchRemoteDatabase(force: Bool = false) async {
-        guard !isFetching else { return }
-        if !force, let lastFetched = lastFetched {
-            let hoursSinceFetch = Date().timeIntervalSince(lastFetched) / 3600
-            if hoursSinceFetch < 1 { return }
-        }
-        
-        isFetching = true
-        defer { isFetching = false }
-        
-        guard let urlString = remoteDbUrl, let url = URL(string: urlString) else {
-            print("⚠️ No remote database URL configured, using embedded data")
-            loadEmbeddedFallback()
-            return
-        }
-        
-        do {
-            print("📡 Fetching player database from remote...")
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 15
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                print("⚠️ Remote database fetch failed, using local cache")
-                return
-            }
-            
-            let database = try JSONDecoder().decode(RemotePlayerDatabase.self, from: data)
-            
-            playerIdCache = database.players
-            lastFetched = Date()
-            
-            saveLocalCache()
-            
-            print("✅ Loaded \(playerIdCache.count) players from remote database (v\(database.version))")
-            
-        } catch {
-            print("⚠️ Remote fetch error: \(error.localizedDescription)")
-            if playerIdCache.isEmpty {
-                loadEmbeddedFallback()
-            }
-        }
-    }
-    
-    // MARK: - Local Cache
-    
-    private func loadLocalCache() {
-        guard FileManager.default.fileExists(atPath: localCacheURL.path) else {
-            loadEmbeddedFallback()
-            return
-        }
-        
-        do {
-            let data = try Data(contentsOf: localCacheURL)
-            let database = try JSONDecoder().decode(RemotePlayerDatabase.self, from: data)
-            playerIdCache = database.players
-            print("✅ Loaded \(playerIdCache.count) players from local cache")
-        } catch {
-            print("⚠️ Failed to load local cache: \(error.localizedDescription)")
-            loadEmbeddedFallback()
-        }
-    }
-    
-    private func saveLocalCache() {
-        let database = RemotePlayerDatabase(
-            version: "cached",
-            lastUpdated: ISO8601DateFormatter().string(from: Date()),
-            players: playerIdCache
-        )
-        
-        do {
-            let data = try JSONEncoder().encode(database)
-            try data.write(to: localCacheURL)
-            print("💾 Saved \(playerIdCache.count) players to local cache")
-        } catch {
-            print("⚠️ Failed to save local cache: \(error.localizedDescription)")
-        }
-    }
-    
-    private func loadEmbeddedFallback() {
-        playerIdCache = Self.embeddedPlayerIds
-        print("📦 Loaded \(playerIdCache.count) players from embedded fallback")
-    }
-    
-    // MARK: - Helpers
-    
-    private func normalizeKey(firstName: String, lastName: String) -> String {
-        "\(firstName.lowercased())_\(lastName.lowercased())"
-            .replacingOccurrences(of: "'", with: "'")
-            .replacingOccurrences(of: " ", with: "_")
-    }
-    
-    private func simplifyKey(_ key: String) -> String {
-        key.replacingOccurrences(of: "'", with: "")
-           .replacingOccurrences(of: "-", with: "")
-           .replacingOccurrences(of: ".", with: "")
-    }
-    
-    /// Embedded fallback - top 100 players
-    private static let embeddedPlayerIds: [String: Int] = [
-        "lebron_james": 2544, "stephen_curry": 201939, "kevin_durant": 201142,
-        "giannis_antetokounmpo": 203507, "luka_doncic": 1629029, "nikola_jokic": 203999,
-        "joel_embiid": 203954, "jayson_tatum": 1628369, "ja_morant": 1629630,
-        "anthony_edwards": 1630162, "shai_gilgeous-alexander": 1628983,
-        "donovan_mitchell": 1628378, "trae_young": 1629027, "devin_booker": 1626164,
-        "jimmy_butler": 202710, "kawhi_leonard": 202695, "paul_george": 202331,
-        "kyrie_irving": 202681, "damian_lillard": 203081, "anthony_davis": 203076,
-        "james_harden": 201935, "bam_adebayo": 1628389, "jaylen_brown": 1627759,
-        "tyrese_haliburton": 1630169, "de'aaron_fox": 1628368, "domantas_sabonis": 1627734,
-        "karl-anthony_towns": 1626157, "jalen_brunson": 1628973, "julius_randle": 203944,
-        "pascal_siakam": 1627783, "scottie_barnes": 1630567, "paolo_banchero": 1631094,
-        "victor_wembanyama": 1641705, "chet_holmgren": 1631096, "tyrese_maxey": 1630178,
-        "evan_mobley": 1630596, "desmond_bane": 1630217, "franz_wagner": 1630532,
-        "alperen_sengun": 1630578, "jalen_williams": 1631114, "cade_cunningham": 1630595,
-        "jalen_green": 1630224, "austin_reaves": 1630559, "russell_westbrook": 201566,
-        "zion_williamson": 1629627, "lamelo_ball": 1630163, "dejounte_murray": 1628405,
-        "fred_vanvleet": 1627832, "draymond_green": 203110, "klay_thompson": 202691,
-        "chris_paul": 101108, "demar_derozan": 201942, "bradley_beal": 203078,
-        "khris_middleton": 203114, "brandon_ingram": 1627742, "cj_mccollum": 203468,
-        "mikal_bridges": 1628969, "lauri_markkanen": 1628374, "myles_turner": 1626167,
-        "nikola_vucevic": 202696, "zach_lavine": 203897, "jarrett_allen": 1628386,
-        "rudy_gobert": 203497, "tyler_herro": 1629639, "og_anunoby": 1628384,
-        "andrew_wiggins": 203952, "cam_thomas": 1630560, "immanuel_quickley": 1630193,
-        "anfernee_simons": 1629014, "josh_hart": 1628404, "coby_white": 1629632
-    ]
-    
-    private func getFallbackAvatarURL(firstName: String, lastName: String, teamAbbr: String) -> URL? {
-        let fullName = "\(firstName)+\(lastName)"
-        let bgColor = TeamColors.primary[teamAbbr]?.replacingOccurrences(of: "#", with: "") ?? "FF6B35"
-        return URL(string: "https://ui-avatars.com/api/?name=\(fullName)&background=\(bgColor)&color=ffffff&size=256&bold=true&format=png")
-    }
-}
-
-
 // MARK: - Cache Entry
 
 private struct CacheEntry<T> {
@@ -509,16 +60,65 @@ final class LiveScoresAPI: @unchecked Sendable {
     /// Set of regular season game IDs (excludes preseason)
     private var regularSeasonGameIds: Set<Int>?
     
-    // Star player names for prioritization
+    /// Cache of game details by game ID for enriching player stats
+    private var gameDetailsCache: [Int: GameDetails] = [:]
+    
+    /// Lightweight struct to cache game details
+    struct GameDetails {
+        let homeTeamId: Int
+        let homeTeamName: String
+        let homeTeamAbbreviation: String
+        let homeTeamScore: Int
+        let visitorTeamId: Int
+        let visitorTeamName: String
+        let visitorTeamAbbreviation: String
+        let visitorTeamScore: Int
+    }
+    
+    // Star player names for prioritization (150 players for fantasy coverage)
     private let starPlayerNames: Set<String> = [
-        "lebron james", "stephen curry", "kevin durant", "giannis antetokounmpo",
-        "luka doncic", "nikola jokic", "joel embiid", "jayson tatum", "ja morant",
-        "anthony edwards", "shai gilgeous-alexander", "donovan mitchell", "trae young",
-        "devin booker", "jimmy butler", "kawhi leonard", "paul george", "kyrie irving",
-        "damian lillard", "anthony davis", "james harden", "bam adebayo", "jaylen brown",
-        "tyrese haliburton", "de'aaron fox", "domantas sabonis", "karl-anthony towns",
-        "jalen brunson", "julius randle", "pascal siakam", "scottie barnes", "paolo banchero",
-        "victor wembanyama", "chet holmgren", "tyrese maxey", "evan mobley", "desmond bane"
+        // Top 50
+        "nikola jokic", "shai gilgeous-alexander", "luka doncic", "tyrese maxey",
+        "victor wembanyama", "anthony edwards", "james harden", "jalen johnson",
+        "cade cunningham", "alperen sengun", "jaylen brown", "pascal siakam",
+        "donovan mitchell", "stephen curry", "mikal bridges", "kevin durant",
+        "evan mobley", "lebron james", "jalen brunson", "michael porter jr.",
+        "karl-anthony towns", "deni avdija", "austin reaves", "amen thompson",
+        "franz wagner", "josh giddey", "jalen williams", "paolo banchero",
+        "derrick white", "jamal murray", "giannis antetokounmpo", "kawhi leonard",
+        "alex sarr", "domantas sabonis", "bam adebayo", "scottie barnes",
+        "lauri markkanen", "nikola vucevic", "trey murphy iii", "joel embiid",
+        "jalen duren", "keyonte george", "stephon castle", "jarrett allen",
+        "brandon miller", "cooper flagg", "coby white", "chet holmgren",
+        "lamelo ball", "zach lavine",
+        // 51-100
+        "demar derozan", "devin booker", "kyshawn george", "naz reid",
+        "devin vassell", "jaden mcdaniels", "brandon ingram", "josh hart",
+        "julius randle", "de'aaron fox", "anthony black", "rudy gobert",
+        "og anunoby", "zion williamson", "norman powell", "donovan clingan",
+        "nickeil alexander-walker", "rj barrett", "saddiq bey", "kristaps porzingis",
+        "vj edgecombe", "ivica zubac", "paul george", "sam merrill",
+        "ryan rollins", "keegan murray", "dillon brooks", "bennedict mathurin",
+        "shaedon sharpe", "anthony davis", "payton pritchard", "robert williams iii",
+        "isaiah hartenstein", "matas buzelis", "darius garland", "davion mitchell",
+        "desmond bane", "deandre ayton", "dyson daniels", "andrew wiggins",
+        "daniel gafford", "russell westbrook", "miles bridges", "bilal coulibaly",
+        "kevin porter jr.", "tyler herro", "jrue holiday", "aaron gordon",
+        "cam spencer", "kon knueppel",
+        // 101-150
+        "jabari smith jr.", "jalen suggs", "collin sexton", "luke kornet",
+        "kel'el ware", "aaron wiggins", "cameron johnson", "wendell carter jr.",
+        "dennis schroder", "myles turner", "santi aldama", "jonathan kuminga",
+        "kelly oubre jr.", "t.j. mcconnell", "jaime jaquez jr.", "toumani camara",
+        "donte divincenzo", "nic claxton", "dereck lively ii", "bogdan bogdanovic",
+        "quentin grimes", "miles mcbride", "cj mccollum", "jusuf nurkic",
+        "jonas valanciunas", "isaiah stewart", "mitchell robinson", "isaiah collier",
+        "draymond green", "bub carrington", "collin murray-boyles", "tre jones",
+        "royce o'neale", "naji marshall", "max christie", "reed sheppard",
+        "neemias queta", "aaron nesmith", "immanuel quickley", "trae young",
+        "luguentz dort", "peyton watson", "caris levert", "ayo dosunmu",
+        "ausar thompson", "harrison barnes", "onyeka okongwu", "julian champagnie",
+        "tari eason", "andre drummond"
     ]
     
     private init() {}
@@ -541,27 +141,14 @@ final class LiveScoresAPI: @unchecked Sendable {
         request.setValue(apiSportsKey, forHTTPHeaderField: "x-apisports-key")
         request.timeoutInterval = 20
         
-        #if DEBUG
-        print("📡 API-Sports Request: \(endpoint)")
-        #endif
-        
         let (data, response) = try await URLSession.shared.data(for: request)
         
         if let httpResponse = response as? HTTPURLResponse {
-            #if DEBUG
-            print("   Status: \(httpResponse.statusCode)")
-            #endif
-            
             if httpResponse.statusCode == 429 {
                 throw NSError(domain: "API", code: 429, userInfo: [NSLocalizedDescriptionKey: "Rate limit exceeded. Please wait."])
             }
             
             if httpResponse.statusCode != 200 {
-                #if DEBUG
-                if let raw = String(data: data, encoding: .utf8) {
-                    print("   Error: \(raw.prefix(300))")
-                }
-                #endif
                 throw NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "API error: \(httpResponse.statusCode)"])
             }
         }
@@ -573,15 +160,8 @@ final class LiveScoresAPI: @unchecked Sendable {
     
     func fetchPlayersWithStats() async throws -> [PlayerWithStats] {
         if let cached = playersWithStatsCache, cached.isValid(ttl: cacheTTL) {
-            #if DEBUG
-            print("✅ Using cached players with stats (\(cached.data.count) players)")
-            #endif
             return cached.data
         }
-        
-        #if DEBUG
-        print("📡 Fetching fresh players with stats...")
-        #endif
         
         let players = try await fetchAllPlayers()
         
@@ -589,10 +169,6 @@ final class LiveScoresAPI: @unchecked Sendable {
         let activePlayers = players.filter { player in
             player.team != nil
         }
-        
-        #if DEBUG
-        print("📋 Filtered to \(activePlayers.count) active players with teams")
-        #endif
         
         var starPlayers: [NBAPlayer] = []
         var otherPlayers: [NBAPlayer] = []
@@ -611,33 +187,100 @@ final class LiveScoresAPI: @unchecked Sendable {
         // Pre-fetch regular season game IDs once before parallel requests
         _ = try? await fetchRegularSeasonGameIds()
         
-        await withTaskGroup(of: (NBAPlayer, SeasonAverages?).self) { group in
-            for player in starPlayers.prefix(30) {
-                group.addTask {
-                    let averages = try? await self.fetchSeasonAverages(playerId: player.id)
-                    return (player, averages)
+        // Use dictionary to collect results (avoids non-deterministic ordering from task group)
+        var averagesDict: [Int: SeasonAverages] = [:]
+        
+        // Batch requests to avoid API rate limiting (5 concurrent requests per batch)
+        // Fetch stats for top 100 star players to get good fantasy score coverage
+        let batchSize = 5
+        let playersToFetch = Array(starPlayers.prefix(100))
+        
+        for batchStart in stride(from: 0, to: playersToFetch.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, playersToFetch.count)
+            let batch = Array(playersToFetch[batchStart..<batchEnd])
+            
+            await withTaskGroup(of: (Int, SeasonAverages?).self) { group in
+                for player in batch {
+                    group.addTask {
+                        let averages = try? await self.fetchSeasonAverages(playerId: player.id)
+                        return (player.id, averages)
+                    }
+                }
+                
+                for await (playerId, averages) in group {
+                    if let avg = averages {
+                        averagesDict[playerId] = avg
+                    }
                 }
             }
             
-            for await (player, averages) in group {
-                playersWithStats.append(PlayerWithStats(player: player, averages: averages))
+            // Small delay between batches to avoid rate limiting
+            if batchEnd < playersToFetch.count {
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
             }
         }
         
-        playersWithStats.sort { $0.fantasyScore > $1.fantasyScore }
+        // Retry for players that didn't get stats (API may have rate-limited them)
+        let missingPlayers = playersToFetch.filter { averagesDict[$0.id] == nil }
+        if !missingPlayers.isEmpty {
+            // Small delay before retry
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
+            
+            // Retry in smaller batches
+            for batchStart in stride(from: 0, to: missingPlayers.count, by: 3) {
+                let batchEnd = min(batchStart + 3, missingPlayers.count)
+                let batch = Array(missingPlayers[batchStart..<batchEnd])
+                
+                await withTaskGroup(of: (Int, SeasonAverages?).self) { group in
+                    for player in batch {
+                        group.addTask {
+                            let averages = try? await self.fetchSeasonAverages(playerId: player.id)
+                            return (player.id, averages)
+                        }
+                    }
+                    
+                    for await (playerId, averages) in group {
+                        if let avg = averages {
+                            averagesDict[playerId] = avg
+                        }
+                    }
+                }
+                
+                if batchEnd < missingPlayers.count {
+                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                }
+            }
+        }
         
-        let fetchedIds = Set(playersWithStats.map { $0.player.id })
+        // Build list in deterministic order (original star player order)
+        for player in starPlayers.prefix(30) {
+            playersWithStats.append(PlayerWithStats(player: player, averages: averagesDict[player.id]))
+        }
+        
+        // Sort by fantasy score, with secondary sort by name for stability
+        playersWithStats.sort { p1, p2 in
+            if p1.fantasyScore != p2.fantasyScore {
+                return p1.fantasyScore > p2.fantasyScore
+            }
+            // Secondary sort by name for players with equal scores (ensures stable ordering)
+            return p1.player.fullName < p2.player.fullName
+        }
+        
+        // Add remaining star players not in first 100
+        let fetchedIds = Set(starPlayers.prefix(100).map { $0.id })
         for player in starPlayers where !fetchedIds.contains(player.id) {
             playersWithStats.append(PlayerWithStats(player: player, averages: nil))
         }
-        for player in otherPlayers {
+        // Add other players sorted by name for consistent ordering
+        let sortedOtherPlayers = otherPlayers.sorted { $0.fullName < $1.fullName }
+        for player in sortedOtherPlayers {
             playersWithStats.append(PlayerWithStats(player: player, averages: nil))
         }
         
         playersWithStatsCache = CacheEntry(data: playersWithStats, timestamp: Date())
         
         #if DEBUG
-        print("✅ Cached \(playersWithStats.count) players with stats")
+        print("✅ Loaded \(playersWithStats.count) players")
         #endif
         
         return playersWithStats
@@ -647,15 +290,8 @@ final class LiveScoresAPI: @unchecked Sendable {
     
     func fetchAllPlayers() async throws -> [NBAPlayer] {
         if let cached = playersCache, cached.isValid(ttl: cacheTTL) {
-            #if DEBUG
-            print("✅ Using cached players list (\(cached.data.count) players)")
-            #endif
             return cached.data
         }
-        
-        #if DEBUG
-        print("📡 Fetching players from API-Sports...")
-        #endif
         
         // First, fetch teams
         let teams = try await fetchTeams()
@@ -665,53 +301,94 @@ final class LiveScoresAPI: @unchecked Sendable {
             team.nbaFranchise == true && team.allStar != true
         }
         
-        #if DEBUG
-        print("📋 Found \(nbaTeams.count) NBA franchise teams")
-        #endif
-        
         let season = getCurrentSeason()
-        var allPlayers: [NBAPlayer] = []
         
-        // Fetch players for each team in parallel (batched to avoid rate limits)
-        let batchSize = 10
+        // Track players by team ID to allow retry for failed teams
+        var playersByTeam: [Int: [NBAPlayer]] = [:]
+        
+        // Helper function to fetch players for a team
+        func fetchPlayersForTeam(_ team: APISportsTeam) async -> (Int, [NBAPlayer]) {
+            do {
+                let data = try await self.makeRequest(endpoint: "players", queryParams: [
+                    "team": "\(team.id)",
+                    "season": season
+                ])
+                let response = try self.decoder.decode(APISportsPlayersResponse.self, from: data)
+                let players = response.response.compactMap { apiPlayer in
+                    self.convertToNBAPlayer(apiPlayer, teamOverride: team)
+                }
+                return (team.id, players)
+            } catch {
+                return (team.id, [])
+            }
+        }
+        
+        // Fetch players for each team in batches of 5 (smaller to avoid rate limits)
+        let batchSize = 5
         for batchStart in stride(from: 0, to: nbaTeams.count, by: batchSize) {
             let batchEnd = min(batchStart + batchSize, nbaTeams.count)
             let batch = Array(nbaTeams[batchStart..<batchEnd])
             
-            await withTaskGroup(of: [NBAPlayer].self) { group in
+            await withTaskGroup(of: (Int, [NBAPlayer]).self) { group in
                 for team in batch {
                     group.addTask {
-                        do {
-                            let data = try await self.makeRequest(endpoint: "players", queryParams: [
-                                "team": "\(team.id)",
-                                "season": season
-                            ])
-                            let response = try self.decoder.decode(APISportsPlayersResponse.self, from: data)
-                            return response.response.compactMap { apiPlayer in
-                                self.convertToNBAPlayer(apiPlayer, teamOverride: team)
-                            }
-                        } catch {
-                            #if DEBUG
-                            print("⚠️ Failed to fetch players for team \(team.id): \(error.localizedDescription)")
-                            #endif
-                            return []
+                        await fetchPlayersForTeam(team)
+                    }
+                }
+                
+                for await (teamId, players) in group {
+                    playersByTeam[teamId] = players
+                }
+            }
+            
+            // Add delay between batches to avoid rate limiting
+            if batchEnd < nbaTeams.count {
+                try? await Task.sleep(nanoseconds: 300_000_000) // 300ms delay
+            }
+        }
+        
+        // Identify teams that returned empty (possibly rate-limited)
+        let failedTeams = nbaTeams.filter { team in
+            playersByTeam[team.id]?.isEmpty ?? true
+        }
+        
+        // Retry failed teams with longer delays
+        if !failedTeams.isEmpty {
+            // Wait before retry
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
+            
+            // Retry in batches of 3 with longer delays
+            for batchStart in stride(from: 0, to: failedTeams.count, by: 3) {
+                let batchEnd = min(batchStart + 3, failedTeams.count)
+                let batch = Array(failedTeams[batchStart..<batchEnd])
+                
+                await withTaskGroup(of: (Int, [NBAPlayer]).self) { group in
+                    for team in batch {
+                        group.addTask {
+                            await fetchPlayersForTeam(team)
+                        }
+                    }
+                    
+                    for await (teamId, players) in group {
+                        if !players.isEmpty {
+                            playersByTeam[teamId] = players
                         }
                     }
                 }
                 
-                for await players in group {
-                    allPlayers.append(contentsOf: players)
+                if batchEnd < failedTeams.count {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
                 }
             }
-            
-            #if DEBUG
-            print("📥 Batch \(batchStart/batchSize + 1): Total players so far: \(allPlayers.count)")
-            #endif
         }
         
-        #if DEBUG
-        print("✅ Fetched \(allPlayers.count) total players from \(nbaTeams.count) teams")
-        #endif
+        // Combine all players
+        var allPlayers: [NBAPlayer] = []
+        for team in nbaTeams {
+            if let players = playersByTeam[team.id] {
+                allPlayers.append(contentsOf: players)
+            }
+        }
         
         if !allPlayers.isEmpty {
             playersCache = CacheEntry(data: allPlayers, timestamp: Date())
@@ -731,10 +408,6 @@ final class LiveScoresAPI: @unchecked Sendable {
             teamsCache[team.id] = team
         }
         
-        #if DEBUG
-        print("✅ Fetched \(response.response.count) teams")
-        #endif
-        
         return response.response
     }
     
@@ -749,31 +422,13 @@ final class LiveScoresAPI: @unchecked Sendable {
         
         let season = getCurrentSeason()
         
-        #if DEBUG
-        print("📡 Fetching games to determine regular season...")
-        #endif
-        
         let data = try await makeRequest(endpoint: "games", queryParams: ["season": season])
         let response = try decoder.decode(APISportsGamesResponse.self, from: data)
         
-        #if DEBUG
-        print("📥 Games API returned \(response.response.count) games")
-        #endif
-        
         var regularGameIds = Set<Int>()
-        var preseasonCount = 0
-        var regularCount = 0
-        var playoffsCount = 0
-        var unknownStageCount = 0
         
         // Check if stage field is available in the data
         let hasStageField = response.response.first?.stage != nil
-        
-        #if DEBUG
-        if let first = response.response.first {
-            print("📋 Sample game - stage: \(first.stage ?? -1), league: \(first.league ?? "nil")")
-        }
-        #endif
         
         if hasStageField {
             // Use stage field for filtering (preferred method)
@@ -782,25 +437,16 @@ final class LiveScoresAPI: @unchecked Sendable {
                 if let stage = game.stage {
                     switch stage {
                     case 1:
-                        preseasonCount += 1
-                        // Don't add to regularGameIds
-                    case 2:
-                        regularCount += 1
-                        regularGameIds.insert(game.id)
+                        // Don't add preseason to regularGameIds
+                        break
                     default:
-                        // Playoffs, play-in, etc. - include them
-                        playoffsCount += 1
+                        // Regular season, playoffs, play-in, etc. - include them
                         regularGameIds.insert(game.id)
                     }
                 } else {
-                    unknownStageCount += 1
                     regularGameIds.insert(game.id) // Include if unknown
                 }
             }
-            
-            #if DEBUG
-            print("✅ Using stage field: \(regularCount) regular + \(playoffsCount) playoffs (excluded \(preseasonCount) preseason)")
-            #endif
         } else {
             // Fallback: Use date cutoff if stage field not available
             let seasonYear = Int(season) ?? 2025
@@ -833,18 +479,23 @@ final class LiveScoresAPI: @unchecked Sendable {
                     regularGameIds.insert(game.id)
                 }
             }
-            
-            #if DEBUG
-            print("⚠️ Stage field not available, using date cutoff: \(cutoffDate)")
-            print("✅ Found \(regularGameIds.count) games after cutoff (from \(response.response.count) total)")
-            #endif
         }
         
         regularSeasonGameIds = regularGameIds
         
-        #if DEBUG
-        print("📊 Total regular season game IDs cached: \(regularGameIds.count)")
-        #endif
+        // Cache game details for all games (for enriching player stats)
+        for game in response.response {
+            gameDetailsCache[game.id] = GameDetails(
+                homeTeamId: game.teams.home.id,
+                homeTeamName: game.teams.home.name,
+                homeTeamAbbreviation: game.teams.home.code ?? "",
+                homeTeamScore: game.scores.home.points ?? 0,
+                visitorTeamId: game.teams.visitors.id,
+                visitorTeamName: game.teams.visitors.name,
+                visitorTeamAbbreviation: game.teams.visitors.code ?? "",
+                visitorTeamScore: game.scores.visitors.points ?? 0
+            )
+        }
         
         return regularGameIds
     }
@@ -862,9 +513,6 @@ final class LiveScoresAPI: @unchecked Sendable {
                 player.teamAbbreviation.lowercased().contains(query)
             }
             if !results.isEmpty {
-                #if DEBUG
-                print("✅ Search results from cache: \(results.count) players")
-                #endif
                 return results
             }
         }
@@ -879,9 +527,6 @@ final class LiveScoresAPI: @unchecked Sendable {
     
     func fetchPlayerStats(playerId: Int, lastNGames: Int = 5) async throws -> [PlayerGameStats] {
         if let cached = playerStatsCache[playerId], cached.isValid(ttl: statsCacheTTL) {
-            #if DEBUG
-            print("✅ Using cached stats for player \(playerId)")
-            #endif
             return Array(cached.data.prefix(lastNGames))
         }
         
@@ -897,36 +542,17 @@ final class LiveScoresAPI: @unchecked Sendable {
         
         let response = try decoder.decode(APISportsStatsResponse.self, from: data)
         
-        #if DEBUG
-        print("📥 API returned \(response.response.count) game stat entries")
-        #endif
-        
         var stats = response.response.compactMap { convertToPlayerGameStats($0) }
         
         // Filter to only regular season games
-        let beforeFilter = stats.count
         stats = stats.filter { regularGameIds.contains($0.game.id) }
-        
-        #if DEBUG
-        print("📥 Filtered to \(stats.count) regular season games (removed \(beforeFilter - stats.count) preseason)")
-        #endif
         
         // API-Sports returns stats in chronological order (oldest first)
         // Reverse to get most recent first
         stats.reverse()
         
-        #if DEBUG
-        print("📅 Last 5 games (most recent first):")
-        for (i, stat) in stats.prefix(5).enumerated() {
-            print("   \(i+1). Game #\(stat.game.id) - \(stat.pts ?? 0) PTS")
-        }
-        #endif
-        
         if !stats.isEmpty {
             playerStatsCache[playerId] = CacheEntry(data: stats, timestamp: Date())
-            #if DEBUG
-            print("✅ Cached \(stats.count) game stats for player \(playerId)")
-            #endif
         }
         
         return Array(stats.prefix(lastNGames))
@@ -936,9 +562,6 @@ final class LiveScoresAPI: @unchecked Sendable {
     
     func fetchSeasonAverages(playerId: Int) async throws -> SeasonAverages? {
         if let cached = seasonAveragesCache[playerId], cached.isValid(ttl: cacheTTL) {
-            #if DEBUG
-            print("✅ Using cached averages for player \(playerId)")
-            #endif
             return cached.data
         }
         
@@ -953,21 +576,11 @@ final class LiveScoresAPI: @unchecked Sendable {
         let response = try decoder.decode(APISportsStatsResponse.self, from: data)
         
         guard !response.response.isEmpty else {
-            #if DEBUG
-            print("⚠️ No stats data for player \(playerId)")
-            #endif
             return nil
         }
         
         // Get regular season game IDs to filter out preseason
         let regularGameIds = try await fetchRegularSeasonGameIds()
-        
-        #if DEBUG
-        print("📊 Player \(playerId): \(response.response.count) total games, \(regularGameIds.count) regular season game IDs cached")
-        if let firstStat = response.response.first, let gameId = firstStat.game?.id {
-            print("   First game ID from stats: \(gameId), in regular set: \(regularGameIds.contains(gameId))")
-        }
-        #endif
         
         // Filter to only regular season games using actual game dates
         let allGames = response.response
@@ -977,15 +590,8 @@ final class LiveScoresAPI: @unchecked Sendable {
         }
         let gamesPlayed = gameStats.count
         
-        #if DEBUG
-        print("📊 Calculating averages from \(gamesPlayed) regular season games (filtered from \(allGames.count) total)")
-        #endif
-        
         // If all games were filtered out, something is wrong - fall back to using all games
         guard gamesPlayed > 0 else {
-            #if DEBUG
-            print("⚠️ All games filtered out! Using all \(allGames.count) games as fallback")
-            #endif
             // Fall back to using all games
             let fallbackStats = allGames
             var totalPts = 0, totalReb = 0, totalAst = 0, totalStl = 0, totalBlk = 0
@@ -1076,10 +682,6 @@ final class LiveScoresAPI: @unchecked Sendable {
         
         seasonAveragesCache[playerId] = CacheEntry(data: result, timestamp: Date())
         
-        #if DEBUG
-        print("✅ Calculated & cached averages for player \(playerId) (\(gamesPlayed) games)")
-        #endif
-        
         return result
     }
     
@@ -1088,10 +690,6 @@ final class LiveScoresAPI: @unchecked Sendable {
     func fetchLiveGames() async throws -> [LiveGame] {
         let data = try await makeRequest(endpoint: "games", queryParams: ["live": "all"])
         let response = try decoder.decode(APISportsGamesResponse.self, from: data)
-        
-        #if DEBUG
-        print("🔴 Live games found: \(response.response.count)")
-        #endif
         
         return response.response.map { game in
             LiveGame(
@@ -1120,10 +718,6 @@ final class LiveScoresAPI: @unchecked Sendable {
         ])
         
         let response = try decoder.decode(APISportsBoxScoreResponse.self, from: data)
-        
-        #if DEBUG
-        print("📊 Box score for game \(gameId): \(response.response.count) player entries")
-        #endif
         
         return response.response.compactMap { stat -> LivePlayerStat? in
             guard let playerId = stat.player?.id,
@@ -1176,15 +770,8 @@ final class LiveScoresAPI: @unchecked Sendable {
         let liveGames = try await fetchLiveGames()
         
         guard !liveGames.isEmpty else {
-            #if DEBUG
-            print("⚪ No live games currently")
-            #endif
             return [:]
         }
-        
-        #if DEBUG
-        print("🔴 \(liveGames.count) live games, fetching box scores for favorite players...")
-        #endif
         
         // Step 2: Fetch box scores for all live games in parallel
         var allLiveStats: [Int: LivePlayerStat] = [:]
@@ -1195,9 +782,6 @@ final class LiveScoresAPI: @unchecked Sendable {
                     do {
                         return try await self.fetchGameBoxScore(gameId: game.id)
                     } catch {
-                        #if DEBUG
-                        print("⚠️ Failed to fetch box score for game \(game.id): \(error.localizedDescription)")
-                        #endif
                         return []
                     }
                 }
@@ -1212,9 +796,8 @@ final class LiveScoresAPI: @unchecked Sendable {
         }
         
         #if DEBUG
-        print("✅ Found \(allLiveStats.count) favorite players currently in live games")
-        for (playerId, stat) in allLiveStats {
-            print("   🏀 \(stat.playerName) (\(playerId)): \(stat.points) PTS, \(stat.rebounds) REB, \(stat.assists) AST")
+        if !allLiveStats.isEmpty {
+            print("🔴 \(allLiveStats.count) favorites playing live")
         }
         #endif
         
@@ -1229,10 +812,6 @@ final class LiveScoresAPI: @unchecked Sendable {
         seasonAveragesCache.removeAll()
         playerStatsCache.removeAll()
         regularSeasonGameIds = nil
-        
-        #if DEBUG
-        print("🗑️ Cache cleared")
-        #endif
     }
     
     // MARK: - Helper Methods
@@ -1316,15 +895,23 @@ final class LiveScoresAPI: @unchecked Sendable {
     private func convertToPlayerGameStats(_ stat: APISportsPlayerStat) -> PlayerGameStats? {
         guard let gameId = stat.game?.id else { return nil }
         
+        // Try to get game details from cache first (more reliable)
+        // Fall back to API response data if cache miss
+        let cachedGame = gameDetailsCache[gameId]
+        
         let gameInfo = PlayerGameStats.GameInfo(
             id: gameId,
             date: stat.game?.date?.dateString ?? "",
-            homeTeamId: stat.game?.teams?.home?.id ?? 0,
-            visitorTeamId: stat.game?.teams?.visitors?.id ?? 0,
-            homeTeamScore: stat.game?.scores?.home?.points ?? 0,
-            visitorTeamScore: stat.game?.scores?.visitors?.points ?? 0,
+            homeTeamId: cachedGame?.homeTeamId ?? stat.game?.teams?.home?.id ?? 0,
+            visitorTeamId: cachedGame?.visitorTeamId ?? stat.game?.teams?.visitors?.id ?? 0,
+            homeTeamScore: cachedGame?.homeTeamScore ?? stat.game?.scores?.home?.points ?? 0,
+            visitorTeamScore: cachedGame?.visitorTeamScore ?? stat.game?.scores?.visitors?.points ?? 0,
             season: Int(getCurrentSeason()) ?? 2024,
-            status: stat.game?.status?.long ?? "Finished"
+            status: stat.game?.status?.long ?? "Finished",
+            homeTeamName: cachedGame?.homeTeamName ?? stat.game?.teams?.home?.name ?? "",
+            homeTeamAbbreviation: cachedGame?.homeTeamAbbreviation ?? stat.game?.teams?.home?.code ?? "",
+            visitorTeamName: cachedGame?.visitorTeamName ?? stat.game?.teams?.visitors?.name ?? "",
+            visitorTeamAbbreviation: cachedGame?.visitorTeamAbbreviation ?? stat.game?.teams?.visitors?.code ?? ""
         )
         
         let playerInfo = PlayerGameStats.PlayerInfo(
@@ -1361,606 +948,5 @@ final class LiveScoresAPI: @unchecked Sendable {
             player: playerInfo,
             team: teamInfo
         )
-    }
-}
-
-// MARK: - Live Game Manager
-
-/// Manages live game tracking with automatic 60-second refresh
-/// Only tracks favorite players to minimize API requests
-@MainActor
-final class LiveGameManager: ObservableObject {
-    static let shared = LiveGameManager()
-    
-    /// Live stats for tracked players (playerId -> stats)
-    @Published private(set) var livePlayerStats: [Int: LivePlayerStat] = [:]
-    
-    /// Currently live games
-    @Published private(set) var liveGames: [LiveGame] = []
-    
-    /// Whether we're currently fetching
-    @Published private(set) var isRefreshing = false
-    
-    /// Last successful refresh time
-    @Published private(set) var lastRefreshed: Date?
-    
-    /// Error from last refresh attempt
-    @Published private(set) var lastError: String?
-    
-    /// Whether auto-refresh is active
-    @Published private(set) var isAutoRefreshEnabled = false
-    
-    /// Refresh interval in seconds
-    private let refreshInterval: TimeInterval = 60
-    
-    /// Timer for auto-refresh
-    private var refreshTimer: Timer?
-    
-    /// Player IDs to track (favorites)
-    private var trackedPlayerIds: Set<Int> = []
-    
-    private init() {}
-    
-    // MARK: - Public API
-    
-    /// Start tracking live stats for favorite players
-    /// - Parameter playerIds: Set of player IDs to track
-    func startTracking(playerIds: Set<Int>) {
-        trackedPlayerIds = playerIds
-        
-        guard !playerIds.isEmpty else {
-            stopTracking()
-            return
-        }
-        
-        #if DEBUG
-        print("🎯 LiveGameManager: Starting to track \(playerIds.count) players")
-        #endif
-        
-        // Start auto-refresh
-        isAutoRefreshEnabled = true
-        startAutoRefresh()
-        
-        // Initial fetch
-        Task {
-            await refresh()
-        }
-    }
-    
-    /// Update the set of tracked players
-    func updateTrackedPlayers(_ playerIds: Set<Int>) {
-        let wasTracking = !trackedPlayerIds.isEmpty
-        trackedPlayerIds = playerIds
-        
-        if playerIds.isEmpty {
-            stopTracking()
-        } else if !wasTracking {
-            startTracking(playerIds: playerIds)
-        }
-        
-        #if DEBUG
-        print("🎯 LiveGameManager: Updated to track \(playerIds.count) players")
-        #endif
-    }
-    
-    /// Stop tracking and clean up
-    func stopTracking() {
-        #if DEBUG
-        print("⏹️ LiveGameManager: Stopping tracking")
-        #endif
-        
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        isAutoRefreshEnabled = false
-        livePlayerStats.removeAll()
-        liveGames.removeAll()
-    }
-    
-    /// Manual refresh
-    func refresh() async {
-        guard !trackedPlayerIds.isEmpty else { return }
-        guard !isRefreshing else { return }
-        
-        isRefreshing = true
-        lastError = nil
-        
-        do {
-            // Fetch live stats for tracked players
-            let stats = try await LiveScoresAPI.shared.fetchLiveStatsForPlayers(playerIds: trackedPlayerIds)
-            
-            // Also get the live games list
-            let games = try await LiveScoresAPI.shared.fetchLiveGames()
-            
-            livePlayerStats = stats
-            liveGames = games
-            lastRefreshed = Date()
-            
-            #if DEBUG
-            print("✅ LiveGameManager: Refreshed - \(stats.count) players live in \(games.count) games")
-            #endif
-            
-        } catch {
-            lastError = error.localizedDescription
-            #if DEBUG
-            print("❌ LiveGameManager: Refresh failed - \(error.localizedDescription)")
-            #endif
-        }
-        
-        isRefreshing = false
-    }
-    
-    /// Check if a specific player is currently live
-    func isPlayerLive(_ playerId: Int) -> Bool {
-        livePlayerStats[playerId] != nil
-    }
-    
-    /// Get live stats for a specific player
-    func getLiveStats(for playerId: Int) -> LivePlayerStat? {
-        livePlayerStats[playerId]
-    }
-    
-    /// Pause auto-refresh (when app goes to background)
-    func pauseAutoRefresh() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        #if DEBUG
-        print("⏸️ LiveGameManager: Auto-refresh paused")
-        #endif
-    }
-    
-    /// Resume auto-refresh (when app comes to foreground)
-    func resumeAutoRefresh() {
-        guard isAutoRefreshEnabled && !trackedPlayerIds.isEmpty else { return }
-        startAutoRefresh()
-        
-        // Refresh immediately when resuming
-        Task {
-            await refresh()
-        }
-        
-        #if DEBUG
-        print("▶️ LiveGameManager: Auto-refresh resumed")
-        #endif
-    }
-    
-    // MARK: - Private
-    
-    private func startAutoRefresh() {
-        refreshTimer?.invalidate()
-        
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.refresh()
-            }
-        }
-        
-        #if DEBUG
-        print("⏱️ LiveGameManager: Auto-refresh started (every \(Int(refreshInterval))s)")
-        #endif
-    }
-}
-
-// MARK: - Live Game Model
-
-struct LiveGame: Identifiable {
-    let id: Int
-    let homeTeam: String
-    let homeTeamCode: String
-    let homeTeamId: Int
-    let homeScore: Int
-    let awayTeam: String
-    let awayTeamCode: String
-    let awayTeamId: Int
-    let awayScore: Int
-    let status: String
-    let period: Int
-    let clock: String
-    
-    var isLive: Bool {
-        status.lowercased().contains("q") || status.lowercased().contains("half")
-    }
-    
-    var periodDisplay: String {
-        if status.lowercased().contains("half") {
-            return "HALF"
-        }
-        switch period {
-        case 1: return "Q1"
-        case 2: return "Q2"
-        case 3: return "Q3"
-        case 4: return "Q4"
-        default: return period > 4 ? "OT\(period - 4)" : "Q\(period)"
-        }
-    }
-    
-    var clockDisplay: String {
-        if clock.isEmpty {
-            return periodDisplay
-        }
-        return "\(periodDisplay) \(clock)"
-    }
-}
-
-// MARK: - Live Player Stats Model
-
-/// Real-time stats for a player currently in a live game
-struct LivePlayerStat: Identifiable {
-    var id: Int { playerId }
-    
-    let playerId: Int
-    let playerName: String
-    let teamId: Int
-    let teamCode: String
-    let gameId: Int
-    
-    // Live stats
-    let points: Int
-    let rebounds: Int
-    let assists: Int
-    let steals: Int
-    let blocks: Int
-    let minutes: String
-    let fgm: Int
-    let fga: Int
-    let fg3m: Int
-    let fg3a: Int
-    let ftm: Int
-    let fta: Int
-    let turnovers: Int
-    
-    // Game context
-    let period: Int
-    let clock: String
-    let gameStatus: String
-    let homeTeamCode: String
-    let awayTeamCode: String
-    let homeScore: Int
-    let awayScore: Int
-    let isHomeTeam: Bool
-    
-    /// e.g. "GSW 102 - LAL 98"
-    var scoreDisplay: String {
-        if isHomeTeam {
-            return "\(homeTeamCode) \(homeScore) - \(awayTeamCode) \(awayScore)"
-        } else {
-            return "\(awayTeamCode) \(awayScore) @ \(homeTeamCode) \(homeScore)"
-        }
-    }
-    
-    /// e.g. "Q3 5:42"
-    var gameClockDisplay: String {
-        let periodStr: String
-        if gameStatus.lowercased().contains("half") {
-            periodStr = "HALF"
-        } else {
-            switch period {
-            case 1: periodStr = "Q1"
-            case 2: periodStr = "Q2"
-            case 3: periodStr = "Q3"
-            case 4: periodStr = "Q4"
-            default: periodStr = period > 4 ? "OT\(period - 4)" : "Q\(period)"
-            }
-        }
-        
-        if clock.isEmpty {
-            return periodStr
-        }
-        return "\(periodStr) \(clock)"
-    }
-    
-    /// Fantasy points for this game
-    var fantasyPoints: Double {
-        Double(points) + (Double(rebounds) * 1.2) + (Double(assists) * 1.5) + (Double(steals) * 3) + (Double(blocks) * 3) - Double(turnovers)
-    }
-}
-
-// MARK: - API-Sports Response Models
-
-private struct APISportsPlayersResponse: Decodable {
-    let response: [APISportsPlayer]
-}
-
-private struct APISportsPlayer: Decodable {
-    let id: Int
-    let firstname: String
-    let lastname: String
-    let birth: BirthInfo?
-    let nba: NBAInfo?
-    let height: HeightInfo?
-    let weight: WeightInfo?
-    let college: String?
-    let affiliation: String?
-    let leagues: [String: LeagueInfo]?
-    let team: TeamInfo?
-    
-    struct BirthInfo: Decodable {
-        let date: String?
-        let country: String?
-    }
-    
-    struct NBAInfo: Decodable {
-        let start: Int?
-        let pro: Int?
-    }
-    
-    struct HeightInfo: Decodable {
-        let feets: String?
-        let inches: String?
-        let meters: String?
-    }
-    
-    struct WeightInfo: Decodable {
-        let pounds: String?
-        let kilograms: String?
-    }
-    
-    struct LeagueInfo: Decodable {
-        let jersey: Int?
-        let active: Bool?
-        let pos: String?
-    }
-    
-    struct TeamInfo: Decodable {
-        let id: Int
-        let name: String
-        let nickname: String?
-        let code: String?
-        let city: String?
-        let logo: String?
-    }
-}
-
-private struct APISportsTeamsResponse: Decodable {
-    let response: [APISportsTeam]
-}
-
-private struct APISportsTeam: Decodable {
-    let id: Int
-    let name: String
-    let nickname: String?
-    let code: String?
-    let city: String?
-    let logo: String?
-    let allStar: Bool?
-    let nbaFranchise: Bool?
-    let leagues: [String: TeamLeagueInfo]?
-    
-    struct TeamLeagueInfo: Decodable {
-        let conference: String?
-        let division: String?
-    }
-}
-
-private struct APISportsStatsResponse: Decodable {
-    let response: [APISportsPlayerStat]
-}
-
-private struct APISportsPlayerStat: Decodable {
-    let player: PlayerRef?
-    let team: TeamRef?
-    let game: GameRef?
-    let points: Int?
-    let pos: String?
-    let min: String?
-    let fgm: Int?
-    let fga: Int?
-    let fgp: String?
-    let ftm: Int?
-    let fta: Int?
-    let ftp: String?
-    let tpm: Int?
-    let tpa: Int?
-    let tpp: String?
-    let offReb: Int?
-    let defReb: Int?
-    let totReb: Int?
-    let assists: Int?
-    let pFouls: Int?
-    let steals: Int?
-    let turnovers: Int?
-    let blocks: Int?
-    let plusMinus: String?
-    let comment: String?
-    
-    struct PlayerRef: Decodable {
-        let id: Int
-        let firstname: String?
-        let lastname: String?
-    }
-    
-    struct TeamRef: Decodable {
-        let id: Int
-        let name: String?
-        let nickname: String?
-        let code: String?
-        let logo: String?
-    }
-    
-    struct GameRef: Decodable {
-        let id: Int
-        let date: FlexibleDate?
-        let teams: TeamsInfo?
-        let scores: ScoresInfo?
-        let status: StatusInfo?
-        
-        // Flexible date that can handle both string and nested object
-        enum FlexibleDate: Decodable {
-            case string(String)
-            case object(DateInfo)
-            
-            var dateString: String? {
-                switch self {
-                case .string(let str): return str
-                case .object(let info): return info.start
-                }
-            }
-            
-            init(from decoder: Decoder) throws {
-                let container = try decoder.singleValueContainer()
-                // Try string first
-                if let str = try? container.decode(String.self) {
-                    self = .string(str)
-                    return
-                }
-                // Then try nested object
-                if let obj = try? container.decode(DateInfo.self) {
-                    self = .object(obj)
-                    return
-                }
-                throw DecodingError.typeMismatch(FlexibleDate.self, DecodingError.Context(codingPath: decoder.codingPath, debugDescription: "Expected String or DateInfo"))
-            }
-        }
-        
-        struct DateInfo: Decodable {
-            let start: String?
-            let end: String?
-        }
-        
-        struct TeamsInfo: Decodable {
-            let home: TeamRef?
-            let visitors: TeamRef?
-        }
-        
-        struct ScoresInfo: Decodable {
-            let home: ScoreInfo?
-            let visitors: ScoreInfo?
-            
-            struct ScoreInfo: Decodable {
-                let points: Int?
-            }
-        }
-        
-        struct StatusInfo: Decodable {
-            let long: String?
-            let short: Int?
-            let clock: String?
-        }
-    }
-}
-
-private struct APISportsGamesResponse: Decodable {
-    let response: [APISportsGame]
-}
-
-private struct APISportsBoxScoreResponse: Decodable {
-    let response: [APISportsBoxScoreStat]
-}
-
-private struct APISportsBoxScoreStat: Decodable {
-    let player: PlayerRef?
-    let team: TeamRef?
-    let game: GameRef?
-    let points: Int?
-    let pos: String?
-    let min: String?
-    let fgm: Int?
-    let fga: Int?
-    let fgp: String?
-    let ftm: Int?
-    let fta: Int?
-    let ftp: String?
-    let tpm: Int?
-    let tpa: Int?
-    let tpp: String?
-    let offReb: Int?
-    let defReb: Int?
-    let totReb: Int?
-    let assists: Int?
-    let pFouls: Int?
-    let steals: Int?
-    let turnovers: Int?
-    let blocks: Int?
-    let plusMinus: String?
-    let comment: String?
-    
-    struct PlayerRef: Decodable {
-        let id: Int
-        let firstname: String?
-        let lastname: String?
-    }
-    
-    struct TeamRef: Decodable {
-        let id: Int
-        let name: String?
-        let nickname: String?
-        let code: String?
-        let logo: String?
-    }
-    
-    struct GameRef: Decodable {
-        let id: Int
-        let date: String?
-        let teams: TeamsInfo?
-        let scores: ScoresInfo?
-        let status: StatusInfo?
-        
-        struct TeamsInfo: Decodable {
-            let home: TeamRef?
-            let visitors: TeamRef?
-        }
-        
-        struct ScoresInfo: Decodable {
-            let home: ScoreInfo?
-            let visitors: ScoreInfo?
-            
-            struct ScoreInfo: Decodable {
-                let points: Int?
-            }
-        }
-        
-        struct StatusInfo: Decodable {
-            let long: String?
-            let short: Int?
-            let clock: String?
-        }
-    }
-}
-
-private struct APISportsGame: Decodable {
-    let id: Int
-    let date: DateInfo
-    let status: StatusInfo
-    let periods: PeriodsInfo
-    let teams: TeamsInfo
-    let scores: ScoresInfo
-    let stage: Int?          // Stage ID (1=Preseason, 2=Regular Season, etc.)
-    let league: String?      // League type (e.g., "standard")
-    
-    struct DateInfo: Decodable {
-        let start: String?
-        let end: String?
-    }
-    
-    struct StatusInfo: Decodable {
-        let long: String?
-        let short: Int?
-        let clock: String?
-    }
-    
-    struct PeriodsInfo: Decodable {
-        let current: Int?
-        let total: Int?
-    }
-    
-    struct TeamsInfo: Decodable {
-        let home: TeamInfo
-        let visitors: TeamInfo
-        
-        struct TeamInfo: Decodable {
-            let id: Int
-            let name: String
-            let nickname: String?
-            let code: String?
-            let logo: String?
-        }
-    }
-    
-    struct ScoresInfo: Decodable {
-        let home: ScoreInfo
-        let visitors: ScoreInfo
-        
-        struct ScoreInfo: Decodable {
-            let points: Int?
-        }
     }
 }
