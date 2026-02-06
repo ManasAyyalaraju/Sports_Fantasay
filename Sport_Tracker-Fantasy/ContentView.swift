@@ -13,45 +13,30 @@ struct ContentView: View {
     @State private var favoritePlayerIds: Set<Int> = []
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HomeView(favoritePlayerIds: $favoritePlayerIds)
-                .tabItem {
-                    Image(systemName: selectedTab == 0 ? "house.fill" : "house")
-                    Text("Home")
+        ZStack {
+            // Content views
+            Group {
+                switch selectedTab {
+                case 0:
+                    HomeView(favoritePlayerIds: $favoritePlayerIds)
+                case 1:
+                    PlayersView(favoritePlayerIds: $favoritePlayerIds)
+                case 2:
+                    ProfileView()
+                default:
+                    HomeView(favoritePlayerIds: $favoritePlayerIds)
                 }
-                .tag(0)
+            }
             
-            PlayersView(favoritePlayerIds: $favoritePlayerIds)
-                .tabItem {
-                    Image(systemName: selectedTab == 1 ? "person.3.fill" : "person.3")
-                    Text("Players")
-                }
-                .tag(1)
+            // Liquid glass tabbar overlay
+            VStack {
+                Spacer()
+                LiquidGlassTabBar(selectedTab: $selectedTab)
+            }
         }
-        .tint(Color(hex: "FF6B35"))
         .onAppear {
             // Load saved favorites
             loadFavorites()
-            
-            // Customize tab bar appearance
-            let appearance = UITabBarAppearance()
-            appearance.configureWithOpaqueBackground()
-            appearance.backgroundColor = UIColor(Color(hex: "1C1C1E"))
-            
-            // Unselected state
-            appearance.stackedLayoutAppearance.normal.iconColor = UIColor(Color(hex: "8E8E93"))
-            appearance.stackedLayoutAppearance.normal.titleTextAttributes = [
-                .foregroundColor: UIColor(Color(hex: "8E8E93"))
-            ]
-            
-            // Selected state
-            appearance.stackedLayoutAppearance.selected.iconColor = UIColor(Color(hex: "FF6B35"))
-            appearance.stackedLayoutAppearance.selected.titleTextAttributes = [
-                .foregroundColor: UIColor(Color(hex: "FF6B35"))
-            ]
-            
-            UITabBar.appearance().standardAppearance = appearance
-            UITabBar.appearance().scrollEdgeAppearance = appearance
         }
         .onChange(of: favoritePlayerIds) { newValue in
             saveFavorites(newValue)
