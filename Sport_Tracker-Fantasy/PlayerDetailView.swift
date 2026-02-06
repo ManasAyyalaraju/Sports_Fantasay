@@ -88,7 +88,7 @@ struct PlayerDetailView: View {
             
             // Name and Position
             VStack(spacing: 8) {
-                Text(player.fullName)
+                Text(player.displayFullName)
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(Color.white)
                 

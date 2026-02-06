@@ -28,6 +28,19 @@ struct NBAPlayer: Identifiable, Codable, Hashable {
         "\(firstName) \(lastName)"
     }
     
+    /// Full name for display (expands abbreviated first names, e.g. "C" → "Cooper" for Cooper Flagg).
+    var displayFullName: String {
+        let expandedFirst = Self.expandedFirstName(firstName, lastName: lastName)
+        return "\(expandedFirst) \(lastName)"
+    }
+    
+    private static func expandedFirstName(_ first: String, lastName: String) -> String {
+        switch "\(first.lowercased())_\(lastName.lowercased())" {
+        case "c_flagg": return "Cooper"
+        default: return first
+        }
+    }
+    
     /// Safe team abbreviation
     var teamAbbreviation: String {
         team?.abbreviation ?? "FA"

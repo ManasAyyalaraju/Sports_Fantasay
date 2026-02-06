@@ -369,7 +369,7 @@ struct FavoritePlayerCard: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(player.fullName)
+                        Text(player.displayFullName)
                             .font(.system(size: 18, weight: .bold))
                             .foregroundStyle(Color.white)
                         

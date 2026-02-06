@@ -149,6 +149,7 @@ actor PlayerPhotoService {
             let database = try JSONDecoder().decode(RemotePlayerDatabase.self, from: data)
             
             playerIdCache = database.players
+            mergeNameAliases()
             lastFetched = Date()
             
             saveLocalCache()
@@ -175,6 +176,7 @@ actor PlayerPhotoService {
             let data = try Data(contentsOf: localCacheURL)
             let database = try JSONDecoder().decode(RemotePlayerDatabase.self, from: data)
             playerIdCache = database.players
+            mergeNameAliases()
             print("✅ Loaded \(playerIdCache.count) players from local cache")
         } catch {
             print("⚠️ Failed to load local cache: \(error.localizedDescription)")
@@ -200,7 +202,14 @@ actor PlayerPhotoService {
     
     private func loadEmbeddedFallback() {
         playerIdCache = Self.embeddedPlayerIds
+        mergeNameAliases()
         print("📦 Loaded \(playerIdCache.count) players from embedded fallback")
+    }
+    
+    private func mergeNameAliases() {
+        for (key, id) in Self.nameAliases {
+            playerIdCache[key] = id
+        }
     }
     
     // MARK: - Helpers
@@ -216,6 +225,16 @@ actor PlayerPhotoService {
            .replacingOccurrences(of: "-", with: "")
            .replacingOccurrences(of: ".", with: "")
     }
+    
+    /// Aliases: API abbreviations, "Jr." name variants, and ID overrides (remote JSON uses ESPN IDs; headshots need NBA.com IDs).
+    private static let nameAliases: [String: Int] = [
+        "c_flagg": 1642843,           // Cooper Flagg – API returns "C"
+        "giannis_antetokounmpo": 203507,  // Remote has 3032977 (ESPN); NBA.com headshot uses 203507
+        "michael_porter_jr": 1629008,
+        "michael_porter_jr.": 1629008,
+        "kevin_porter_jr": 1629645,
+        "kevin_porter_jr.": 1629645
+    ]
     
     /// Embedded fallback - top 100 players
     private static let embeddedPlayerIds: [String: Int] = [
@@ -242,7 +261,10 @@ actor PlayerPhotoService {
         "nikola_vucevic": 202696, "zach_lavine": 203897, "jarrett_allen": 1628386,
         "rudy_gobert": 203497, "tyler_herro": 1629639, "og_anunoby": 1628384,
         "andrew_wiggins": 203952, "cam_thomas": 1630560, "immanuel_quickley": 1630193,
-        "anfernee_simons": 1629014, "josh_hart": 1628404, "coby_white": 1629632
+        "anfernee_simons": 1629014, "josh_hart": 1628404,         "coby_white": 1629632,
+        "cooper_flagg": 1642843,
+        "michael_porter_jr": 1629008,
+        "kevin_porter_jr": 1629645
     ]
     
     private func getFallbackAvatarURL(firstName: String, lastName: String, teamAbbr: String) -> URL? {

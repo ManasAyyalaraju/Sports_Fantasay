@@ -139,7 +139,7 @@ final class LiveScoresAPI: @unchecked Sendable {
         
         var request = URLRequest(url: url)
         request.setValue(apiSportsKey, forHTTPHeaderField: "x-apisports-key")
-        request.timeoutInterval = 20
+        request.timeoutInterval = 45  // API can be slow; avoid -1001 timeouts
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
@@ -166,15 +166,16 @@ final class LiveScoresAPI: @unchecked Sendable {
         let players = try await fetchAllPlayers()
         
         // Filter to players with teams (current NBA players)
-        let activePlayers = players.filter { player in
-            player.team != nil
-        }
+        let withTeams = players.filter { $0.team != nil }
+        // Deduplicate by player id (API can return same player under multiple teams)
+        var seenIds: Set<Int> = []
+        let activePlayers = withTeams.filter { seenIds.insert($0.id).inserted }
         
         var starPlayers: [NBAPlayer] = []
         var otherPlayers: [NBAPlayer] = []
         
         for player in activePlayers {
-            let fullName = player.fullName.lowercased()
+            let fullName = player.displayFullName.lowercased()
             if starPlayerNames.contains(fullName) {
                 starPlayers.append(player)
             } else {
@@ -190,9 +191,9 @@ final class LiveScoresAPI: @unchecked Sendable {
         // Use dictionary to collect results (avoids non-deterministic ordering from task group)
         var averagesDict: [Int: SeasonAverages] = [:]
         
-        // Batch requests to avoid API rate limiting (5 concurrent requests per batch)
+        // Batch requests to avoid API rate limiting and timeouts (2 concurrent per batch)
         // Fetch stats for top 100 star players to get good fantasy score coverage
-        let batchSize = 5
+        let batchSize = 2
         let playersToFetch = Array(starPlayers.prefix(100))
         
         for batchStart in stride(from: 0, to: playersToFetch.count, by: batchSize) {
@@ -214,21 +215,19 @@ final class LiveScoresAPI: @unchecked Sendable {
                 }
             }
             
-            // Small delay between batches to avoid rate limiting
+            // Delay between batches to avoid timeouts and rate limiting
             if batchEnd < playersToFetch.count {
-                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                try? await Task.sleep(nanoseconds: 450_000_000) // 450ms
             }
         }
         
-        // Retry for players that didn't get stats (API may have rate-limited them)
+        // Retry for players that didn't get stats (timeout or rate limit)
         let missingPlayers = playersToFetch.filter { averagesDict[$0.id] == nil }
         if !missingPlayers.isEmpty {
-            // Small delay before retry
-            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms delay
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s before retry
             
-            // Retry in smaller batches
-            for batchStart in stride(from: 0, to: missingPlayers.count, by: 3) {
-                let batchEnd = min(batchStart + 3, missingPlayers.count)
+            for batchStart in stride(from: 0, to: missingPlayers.count, by: 2) {
+                let batchEnd = min(batchStart + 2, missingPlayers.count)
                 let batch = Array(missingPlayers[batchStart..<batchEnd])
                 
                 await withTaskGroup(of: (Int, SeasonAverages?).self) { group in
@@ -247,13 +246,13 @@ final class LiveScoresAPI: @unchecked Sendable {
                 }
                 
                 if batchEnd < missingPlayers.count {
-                    try? await Task.sleep(nanoseconds: 200_000_000) // 200ms delay
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
                 }
             }
         }
         
-        // Build list in deterministic order (original star player order)
-        for player in starPlayers.prefix(30) {
+        // Build list: all star players 1–100 with stats (we fetched stats for all of them)
+        for player in starPlayers.prefix(100) {
             playersWithStats.append(PlayerWithStats(player: player, averages: averagesDict[player.id]))
         }
         
@@ -262,13 +261,12 @@ final class LiveScoresAPI: @unchecked Sendable {
             if p1.fantasyScore != p2.fantasyScore {
                 return p1.fantasyScore > p2.fantasyScore
             }
-            // Secondary sort by name for players with equal scores (ensures stable ordering)
             return p1.player.fullName < p2.player.fullName
         }
         
-        // Add remaining star players not in first 100
-        let fetchedIds = Set(starPlayers.prefix(100).map { $0.id })
-        for player in starPlayers where !fetchedIds.contains(player.id) {
+        // Add remaining star players (101–150) without stats
+        let top100Ids = Set(starPlayers.prefix(100).map { $0.id })
+        for player in starPlayers where !top100Ids.contains(player.id) {
             playersWithStats.append(PlayerWithStats(player: player, averages: nil))
         }
         // Add other players sorted by name for consistent ordering
@@ -508,7 +506,7 @@ final class LiveScoresAPI: @unchecked Sendable {
         if let cached = playersCache, cached.isValid(ttl: cacheTTL) {
             let query = query.lowercased()
             let results = cached.data.filter { player in
-                player.fullName.lowercased().contains(query) ||
+                player.displayFullName.lowercased().contains(query) ||
                 player.teamFullName.lowercased().contains(query) ||
                 player.teamAbbreviation.lowercased().contains(query)
             }
@@ -826,6 +824,15 @@ final class LiveScoresAPI: @unchecked Sendable {
         return "\(seasonYear)"
     }
     
+    /// Expands abbreviated first names from the API for display (e.g. "C" + "Flagg" → "Cooper").
+    private func expandFirstNameForDisplay(_ firstName: String, lastName: String) -> String {
+        let key = "\(firstName.lowercased())_\(lastName.lowercased())"
+        switch key {
+        case "c_flagg": return "Cooper"
+        default: return firstName
+        }
+    }
+    
     private func convertToNBAPlayer(_ apiPlayer: APISportsPlayer, teamOverride: APISportsTeam? = nil) -> NBAPlayer? {
         var team: NBATeam? = nil
         
@@ -875,9 +882,10 @@ final class LiveScoresAPI: @unchecked Sendable {
             position = standard.pos ?? ""
         }
         
+        let displayFirstName = expandFirstNameForDisplay(apiPlayer.firstname, lastName: apiPlayer.lastname)
         return NBAPlayer(
             id: apiPlayer.id,
-            firstName: apiPlayer.firstname,
+            firstName: displayFirstName,
             lastName: apiPlayer.lastname,
             position: position,
             height: height,
@@ -914,10 +922,13 @@ final class LiveScoresAPI: @unchecked Sendable {
             visitorTeamAbbreviation: cachedGame?.visitorTeamAbbreviation ?? stat.game?.teams?.visitors?.code ?? ""
         )
         
+        let rawFirst = stat.player?.firstname ?? ""
+        let rawLast = stat.player?.lastname ?? ""
+        let displayFirst = expandFirstNameForDisplay(rawFirst, lastName: rawLast)
         let playerInfo = PlayerGameStats.PlayerInfo(
             id: stat.player?.id ?? 0,
-            firstName: stat.player?.firstname ?? "",
-            lastName: stat.player?.lastname ?? "",
+            firstName: displayFirst,
+            lastName: rawLast,
             position: stat.pos ?? "",
             teamId: stat.team?.id
         )

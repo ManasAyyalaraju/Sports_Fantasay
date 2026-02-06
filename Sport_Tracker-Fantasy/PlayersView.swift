@@ -312,7 +312,7 @@ struct PlayersView: View {
         if !searchText.isEmpty {
             let query = searchText.lowercased()
             result = result.filter { playerWithStats in
-                playerWithStats.player.fullName.lowercased().contains(query) ||
+                playerWithStats.player.displayFullName.lowercased().contains(query) ||
                 playerWithStats.player.teamFullName.lowercased().contains(query) ||
                 playerWithStats.player.teamAbbreviation.lowercased().contains(query)
             }
@@ -325,7 +325,7 @@ struct PlayersView: View {
                 if p1.fantasyScore != p2.fantasyScore {
                     return p1.fantasyScore > p2.fantasyScore
                 }
-                return p1.player.fullName < p2.player.fullName
+                return p1.player.displayFullName < p2.player.displayFullName
             }
         case .name:
             result.sort { $0.player.lastName < $1.player.lastName }
@@ -334,14 +334,14 @@ struct PlayersView: View {
                 if p1.player.teamFullName != p2.player.teamFullName {
                     return p1.player.teamFullName < p2.player.teamFullName
                 }
-                return p1.player.fullName < p2.player.fullName
+                return p1.player.displayFullName < p2.player.displayFullName
             }
         case .fppg:
             result.sort { p1, p2 in
                 if p1.fantasyScore != p2.fantasyScore {
                     return p1.fantasyScore > p2.fantasyScore
                 }
-                return p1.player.fullName < p2.player.fullName
+                return p1.player.displayFullName < p2.player.displayFullName
             }
         }
         
@@ -403,7 +403,7 @@ struct PlayerRowView: View {
                 // Player Info
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
-                        Text(player.fullName)
+                        Text(player.displayFullName)
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(Color.white)
                         
