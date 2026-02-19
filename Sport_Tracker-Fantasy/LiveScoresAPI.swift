@@ -63,6 +63,9 @@ final class LiveScoresAPI: @unchecked Sendable {
     /// Cache of game details by game ID for enriching player stats
     private var gameDetailsCache: [Int: GameDetails] = [:]
     
+    /// Upcoming games by team ID (next game per team). TTL matches cacheTTL.
+    private var upcomingGamesCache: (data: [Int: UpcomingGameInfo], timestamp: Date)?
+    
     /// Lightweight struct to cache game details
     struct GameDetails {
         let homeTeamId: Int
@@ -276,10 +279,6 @@ final class LiveScoresAPI: @unchecked Sendable {
         }
         
         playersWithStatsCache = CacheEntry(data: playersWithStats, timestamp: Date())
-        
-        #if DEBUG
-        print("✅ Loaded \(playersWithStats.count) players")
-        #endif
         
         return playersWithStats
     }
@@ -496,6 +495,68 @@ final class LiveScoresAPI: @unchecked Sendable {
         }
         
         return regularGameIds
+    }
+    
+    // MARK: - Upcoming Games (next game per team for home roster)
+    
+    /// Fetches the next upcoming game for each given team from the season schedule.
+    /// Uses the same "games" endpoint (full season); filters to games on or after today, excludes preseason.
+    func fetchUpcomingGamesForTeams(_ teamIds: Set<Int>) async throws -> [Int: UpcomingGameInfo] {
+        guard !teamIds.isEmpty else { return [:] }
+        // Only use cache if we have next game for every requested team (avoids stale cache when user switches league)
+        if let cached = upcomingGamesCache, Date().timeIntervalSince(cached.timestamp) < cacheTTL {
+            let fromCache = teamIds.reduce(into: [Int: UpcomingGameInfo]()) { result, id in
+                if let info = cached.data[id] { result[id] = info }
+            }
+            if fromCache.count == teamIds.count {
+                return fromCache
+            }
+        }
+        let season = getCurrentSeason()
+        let data = try await makeRequest(endpoint: "games", queryParams: ["season": season])
+        let response = try decoder.decode(APISportsGamesResponse.self, from: data)
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fallbackFormatter = DateFormatter()
+        fallbackFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fallbackFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mma"
+        timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+        var upcoming: [(date: Date, game: APISportsGame)] = []
+        for game in response.response {
+            if game.stage == 1 { continue }
+            guard let dateStr = game.date.start else { continue }
+            let gameDate = isoFormatter.date(from: dateStr)
+                ?? fallbackFormatter.date(from: dateStr)
+                ?? { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.date(from: String(dateStr.prefix(10))) }()
+            guard let d = gameDate, d >= todayStart else { continue }
+            upcoming.append((d, game))
+        }
+        upcoming.sort { $0.date < $1.date }
+        var byTeam: [Int: UpcomingGameInfo] = [:]
+        var assignedTeams: Set<Int> = []
+        for (date, game) in upcoming {
+            let homeId = game.teams.home.id
+            let visId = game.teams.visitors.id
+            let homeCode = game.teams.home.code ?? ""
+            let visCode = game.teams.visitors.code ?? ""
+            let timeStr = timeFormatter.string(from: date)
+            let info = UpcomingGameInfo(visitorAbbreviation: visCode, homeAbbreviation: homeCode, timeString: timeStr)
+            if teamIds.contains(homeId), !assignedTeams.contains(homeId) {
+                byTeam[homeId] = info
+                assignedTeams.insert(homeId)
+            }
+            if teamIds.contains(visId), !assignedTeams.contains(visId) {
+                byTeam[visId] = info
+                assignedTeams.insert(visId)
+            }
+            if assignedTeams.count >= teamIds.count { break }
+        }
+        upcomingGamesCache = (byTeam, Date())
+        return byTeam
     }
     
     // MARK: - Search Players
@@ -793,6 +854,14 @@ final class LiveScoresAPI: @unchecked Sendable {
             }
         }
         
+        // Enrich each stat with live game context (scores, quarter, clock — box score API may omit or use wrong values)
+        let gameById = Dictionary(uniqueKeysWithValues: liveGames.map { ($0.id, $0) })
+        for (playerId, stat) in allLiveStats {
+            if let game = gameById[stat.gameId] {
+                allLiveStats[playerId] = stat.withGameContext(from: game)
+            }
+        }
+        
         #if DEBUG
         if !allLiveStats.isEmpty {
             print("🔴 \(allLiveStats.count) favorites playing live")
@@ -810,6 +879,7 @@ final class LiveScoresAPI: @unchecked Sendable {
         seasonAveragesCache.removeAll()
         playerStatsCache.removeAll()
         regularSeasonGameIds = nil
+        upcomingGamesCache = nil
     }
     
     // MARK: - Helper Methods

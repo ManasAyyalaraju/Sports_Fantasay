@@ -8,9 +8,9 @@
 import SwiftUI
 
 struct AppColors {
-    // Primary colors
-    static let primary = Color(hex: "FF6B35")
-    static let secondary = Color(hex: "F7931E")
+    // Primary colors (flipped: blue primary, teal secondary)
+    static let primary = Color(hex: "0073EF")
+    static let secondary = Color(hex: "00EFEB")
     
     // Background colors
     static let background = Color(hex: "0A0A0A")
@@ -22,13 +22,13 @@ struct AppColors {
     static let secondaryText = Color(hex: "8E8E93")
     static let tertiaryText = Color(hex: "3A3A3C")
     
-    // Accent colors
-    static let accent = Color(hex: "FF6B35")
+    // Accent colors (white)
+    static let accent = Color.white
     static let gold = Color(hex: "FFD700")
     
-    // Gradient
+    // Gradient (primary then secondary)
     static let primaryGradient = LinearGradient(
-        colors: [Color(hex: "FF6B35"), Color(hex: "F7931E")],
+        colors: [Color(hex: "0073EF"), Color(hex: "00EFEB")],
         startPoint: .leading,
         endPoint: .trailing
     )

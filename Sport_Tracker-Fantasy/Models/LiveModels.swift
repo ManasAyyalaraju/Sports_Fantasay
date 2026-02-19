@@ -7,6 +7,21 @@
 
 import Foundation
 
+// MARK: - Upcoming Game Info
+
+/// Next game for a team (from season schedule). Used to show "VIS @ HOM, 7:00pm" on home roster.
+struct UpcomingGameInfo {
+    let visitorAbbreviation: String
+    let homeAbbreviation: String
+    /// Display time e.g. "7:00pm"
+    let timeString: String
+    /// Full display line e.g. "LAL @ OKC, 7:00pm"
+    var displayLine: String {
+        if timeString.isEmpty { return "\(visitorAbbreviation) @ \(homeAbbreviation)" }
+        return "\(visitorAbbreviation) @ \(homeAbbreviation), \(timeString)"
+    }
+}
+
 // MARK: - Live Game Model
 
 struct LiveGame: Identifiable {
@@ -94,29 +109,54 @@ struct LivePlayerStat: Identifiable {
         }
     }
     
-    /// e.g. "Q3 5:42"
+    /// e.g. "Q3" (quarter only, no game clock)
     var gameClockDisplay: String {
-        let periodStr: String
         if gameStatus.lowercased().contains("half") {
-            periodStr = "HALF"
-        } else {
-            switch period {
-            case 1: periodStr = "Q1"
-            case 2: periodStr = "Q2"
-            case 3: periodStr = "Q3"
-            case 4: periodStr = "Q4"
-            default: periodStr = period > 4 ? "OT\(period - 4)" : "Q\(period)"
-            }
+            return "HALF"
         }
-        
-        if clock.isEmpty {
-            return periodStr
+        switch period {
+        case 1: return "Q1"
+        case 2: return "Q2"
+        case 3: return "Q3"
+        case 4: return "Q4"
+        default: return period > 4 ? "OT\(period - 4)" : "Q\(period)"
         }
-        return "\(periodStr) \(clock)"
     }
     
     /// Fantasy points for this game
     var fantasyPoints: Double {
         Double(points) + (Double(rebounds) * 1.2) + (Double(assists) * 1.5) + (Double(steals) * 3) + (Double(blocks) * 3) - Double(turnovers)
+    }
+    
+    /// Returns a copy with updated game context (scores, quarter, clock) from the live games endpoint.
+    func withGameContext(from game: LiveGame) -> LivePlayerStat {
+        LivePlayerStat(
+            playerId: playerId,
+            playerName: playerName,
+            teamId: teamId,
+            teamCode: teamCode,
+            gameId: gameId,
+            points: points,
+            rebounds: rebounds,
+            assists: assists,
+            steals: steals,
+            blocks: blocks,
+            minutes: minutes,
+            fgm: fgm,
+            fga: fga,
+            fg3m: fg3m,
+            fg3a: fg3a,
+            ftm: ftm,
+            fta: fta,
+            turnovers: turnovers,
+            period: game.period,
+            clock: game.clock,
+            gameStatus: game.status,
+            homeTeamCode: homeTeamCode,
+            awayTeamCode: awayTeamCode,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            isHomeTeam: isHomeTeam
+        )
     }
 }

@@ -53,12 +53,12 @@ struct NBAPlayer: Identifiable, Codable, Hashable {
     
     /// Safe team primary color
     var teamPrimaryColor: String {
-        team?.primaryColor ?? "FF6B35"
+        team?.primaryColor ?? "0073EF"
     }
     
     /// Safe team secondary color
     var teamSecondaryColor: String {
-        team?.secondaryColor ?? "F7931E"
+        team?.secondaryColor ?? "00EFEB"
     }
     
     func hash(into hasher: inout Hasher) {
@@ -83,11 +83,11 @@ struct NBATeam: Codable, Hashable {
     
     /// Team primary color for avatar backgrounds
     var primaryColor: String {
-        TeamColors.primary[abbreviation] ?? "FF6B35"
+        TeamColors.primary[abbreviation] ?? "0073EF"
     }
     
     var secondaryColor: String {
-        TeamColors.secondary[abbreviation] ?? "F7931E"
+        TeamColors.secondary[abbreviation] ?? "00EFEB"
     }
 }
 
@@ -143,6 +143,16 @@ struct PlayerGameStats: Identifiable, Codable {
         let fullName: String
     }
     
+    /// Parsed game date for comparison (e.g. vs league draft date). Uses start of day.
+    var gameDateAsDate: Date? {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        if let date = dateFormatter.date(from: game.date) { return date }
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        return dateFormatter.date(from: String(game.date.prefix(10)))
+    }
+
     var formattedDate: String {
         // API-Sports format: "2024-01-15T00:00:00.000Z"
         let dateFormatter = DateFormatter()
@@ -169,6 +179,17 @@ struct PlayerGameStats: Identifiable, Codable {
             return String(min[..<colonIndex])
         }
         return min
+    }
+
+    /// Fantasy points for this game (same formula as live: pts + 1.2*reb + 1.5*ast + 3*stl + 3*blk - turnovers).
+    var fantasyPoints: Double {
+        let p = Double(pts ?? 0)
+        let r = Double(reb ?? 0)
+        let a = Double(ast ?? 0)
+        let s = Double(stl ?? 0)
+        let b = Double(blk ?? 0)
+        let t = Double(turnover ?? 0)
+        return p + (r * 1.2) + (a * 1.5) + (s * 3) + (b * 3) - t
     }
 }
 

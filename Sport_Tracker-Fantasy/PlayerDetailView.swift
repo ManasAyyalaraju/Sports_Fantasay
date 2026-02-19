@@ -11,7 +11,13 @@ struct PlayerDetailView: View {
     let player: NBAPlayer
     let isFavorite: Bool
     let onFavoriteToggle: () -> Void
-    
+    /// When set, show "Add to roster" button (e.g. from league add-player flow). Callback runs when user taps add.
+    var league: League? = nil
+    var isOnRoster: Bool = false
+    var onAddToRoster: (() -> Void)? = nil
+    /// When true, don't wrap in NavigationStack (already inside a stack). Avoids nested stack / blank screen when pushed.
+    var isPushed: Bool = false
+
     @Environment(\.dismiss) private var dismiss
     @StateObject private var liveManager = LiveGameManager.shared
     @State private var recentStats: [PlayerGameStats] = []
@@ -24,32 +30,40 @@ struct PlayerDetailView: View {
         liveManager.getLiveStats(for: player.id)
     }
     
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Live Game Card (if player is currently playing)
-                    if let live = liveStats {
-                        liveGameCard(live)
-                    }
-                    
-                    // Player Header Card
-                    playerHeaderCard
-                    
-                    // Season Averages
-                    if let averages = seasonAverages {
-                        seasonAveragesCard(averages)
-                    }
-                    
-                    // Last 5 Games
-                    recentGamesSection
+    private var detailContent: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                // Live Game Card (if player is currently playing)
+                if let live = liveStats {
+                    liveGameCard(live)
                 }
-                .padding(20)
-                .padding(.bottom, 40)
+                
+                // Player Header Card
+                playerHeaderCard
+
+                // Add to roster (when in league add-player flow and not already on roster)
+                if league != nil, !isOnRoster, let onAdd = onAddToRoster {
+                    addToRosterButton(onTap: onAdd)
+                }
+                
+                // Season Averages
+                if let averages = seasonAverages {
+                    seasonAveragesCard(averages)
+                }
+                
+                // Last 5 Games
+                recentGamesSection
             }
-            .background(Color(hex: "0A0A0A"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
+            .padding(20)
+            .padding(.bottom, 40)
+        }
+        .refreshable {
+            await loadPlayerData()
+        }
+        .background(Color(hex: "0A0A0A"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !isPushed {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         dismiss()
@@ -59,25 +73,50 @@ struct PlayerDetailView: View {
                             .foregroundStyle(Color(hex: "3A3A3C"))
                     }
                 }
-                
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-                            onFavoriteToggle()
-                        }
-                    } label: {
-                        Image(systemName: isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 22))
-                            .foregroundStyle(isFavorite ? Color(hex: "FFD700") : Color(hex: "8E8E93"))
+            }
+            
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                        onFavoriteToggle()
                     }
+                } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .font(.system(size: 22))
+                        .foregroundStyle(isFavorite ? Color(hex: "FFD700") : Color(hex: "8E8E93"))
                 }
             }
-            .task {
-                await loadPlayerData()
+        }
+        .task {
+            await loadPlayerData()
+        }
+    }
+
+    var body: some View {
+        if isPushed {
+            detailContent
+        } else {
+            NavigationStack {
+                detailContent
             }
         }
     }
     
+    // MARK: - Add to Roster Button
+
+    private func addToRosterButton(onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            Label("Add to roster", systemImage: "person.badge.plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Player Header Card
     
     private var playerHeaderCard: some View {
@@ -229,7 +268,7 @@ struct PlayerDetailView: View {
                 VStack(spacing: 4) {
                     Text(live.awayTeamCode)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(!live.isHomeTeam ? Color(hex: "FF6B35") : Color(hex: "8E8E93"))
+                        .foregroundStyle(!live.isHomeTeam ? Color.white : Color(hex: "8E8E93"))
                     
                     Text("\(live.awayScore)")
                         .font(.system(size: 32, weight: .heavy, design: .rounded))
@@ -245,7 +284,7 @@ struct PlayerDetailView: View {
                 VStack(spacing: 4) {
                     Text(live.homeTeamCode)
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(live.isHomeTeam ? Color(hex: "FF6B35") : Color(hex: "8E8E93"))
+                        .foregroundStyle(live.isHomeTeam ? Color.white : Color(hex: "8E8E93"))
                     
                     Text("\(live.homeScore)")
                         .font(.system(size: 32, weight: .heavy, design: .rounded))
@@ -370,7 +409,7 @@ struct PlayerDetailView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundStyle(highlight ? Color(hex: "FF6B35") : Color.white)
+                .foregroundStyle(highlight ? Color.white : Color.white)
             
             Text(label)
                 .font(.system(size: 12, weight: .medium))
@@ -411,7 +450,7 @@ struct PlayerDetailView: View {
                     let avgPts = Double(recentStats.compactMap { $0.pts }.reduce(0, +)) / Double(recentStats.count)
                     Text(String(format: "%.1f PPG", avgPts))
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color(hex: "FF6B35"))
+                        .foregroundStyle(Color.white)
                 }
             }
             
@@ -419,7 +458,7 @@ struct PlayerDetailView: View {
                 VStack(spacing: 16) {
                     ProgressView()
                         .scaleEffect(1.2)
-                        .tint(Color(hex: "FF6B35"))
+                        .tint(Color.white)
                     Text("Loading game logs...")
                         .font(.subheadline)
                         .foregroundStyle(Color(hex: "8E8E93"))
@@ -449,7 +488,7 @@ struct PlayerDetailView: View {
                         .foregroundStyle(Color.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color(hex: "FF6B35"))
+                        .background(Color.white)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
                 }
@@ -483,17 +522,50 @@ struct PlayerDetailView: View {
     // MARK: - Data Loading
     
     private func loadPlayerData() async {
+        print("🟣 PlayerDetailView.loadPlayerData – loading recent games and season averages for player \(player.id) \(player.displayFullName)")
         isLoading = true
         errorMessage = nil
         
         do {
-            // Fetch stats and averages concurrently
-            async let statsTask = LiveScoresAPI.shared.fetchPlayerStats(playerId: player.id, lastNGames: 5)
-            async let averagesTask = LiveScoresAPI.shared.fetchSeasonAverages(playerId: player.id)
-            
-            let (stats, averages) = try await (statsTask, averagesTask)
-            recentStats = stats
-            seasonAverages = averages
+            // Prefer Supabase reference data for recent games + averages; fall back to API-Sports if needed.
+            do {
+                async let supabaseStatsTask = SupabaseNBAService.shared.fetchRecentGameStats(playerId: player.id, lastNGames: 5)
+                async let supabaseAvgTask = SupabaseNBAService.shared.fetchSeasonAverage(for: player.id)
+
+                let (supabaseStats, supabaseAvg) = try await (supabaseStatsTask, supabaseAvgTask)
+
+                if !supabaseStats.isEmpty {
+                    print("🔵 PlayerDetailView – using Supabase recent games for player \(player.id)")
+                    recentStats = supabaseStats
+                } else {
+                    print("🟠 PlayerDetailView – Supabase had no recent games, falling back to API-Sports for player \(player.id)")
+                    recentStats = try await LiveScoresAPI.shared.fetchPlayerStats(playerId: player.id, lastNGames: 5)
+                }
+
+                if let avg = supabaseAvg {
+                    print("🔵 PlayerDetailView – using Supabase season averages for player \(player.id)")
+                    seasonAverages = avg
+                } else {
+                    print("🟠 PlayerDetailView – Supabase had no season averages, falling back to API-Sports for player \(player.id)")
+                    seasonAverages = try await LiveScoresAPI.shared.fetchSeasonAverages(playerId: player.id)
+                }
+            } catch {
+                // Request was cancelled (e.g. user left the screen) – don't log or fall back
+                if (error as NSError).code == NSURLErrorCancelled {
+                    isLoading = false
+                    return
+                }
+                if let urlError = error as? URLError, urlError.code == .cancelled {
+                    isLoading = false
+                    return
+                }
+                print("🟠 PlayerDetailView – Supabase error \(error), falling back entirely to API-Sports for player \(player.id)")
+                async let statsTask = LiveScoresAPI.shared.fetchPlayerStats(playerId: player.id, lastNGames: 5)
+                async let averagesTask = LiveScoresAPI.shared.fetchSeasonAverages(playerId: player.id)
+                let (stats, averages) = try await (statsTask, averagesTask)
+                recentStats = stats
+                seasonAverages = averages
+            }
             
         } catch let urlError as URLError {
             // Network-specific errors
@@ -596,7 +668,7 @@ struct GameStatCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(isExpanded ? Color(hex: "FF6B35").opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(isExpanded ? Color.white.opacity(0.3) : Color.clear, lineWidth: 1)
         )
     }
     
@@ -654,7 +726,7 @@ struct GameStatCard: View {
         VStack(spacing: 3) {
             Text(value)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(highlight ? Color(hex: "FF6B35") : Color.white)
+                .foregroundStyle(highlight ? Color.white : Color.white)
             
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
@@ -752,7 +824,7 @@ struct GameStatCard: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(
                                 pct >= 0.5 ? Color(hex: "34C759") :
-                                    (pct >= 0.4 ? Color(hex: "FF9500") : Color(hex: "FF6B35"))
+                                    (pct >= 0.4 ? Color(hex: "FF9500") : Color.white)
                             )
                             .frame(width: geo.size.width * pct, height: 4)
                     }

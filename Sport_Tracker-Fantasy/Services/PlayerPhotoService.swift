@@ -97,7 +97,6 @@ actor PlayerPhotoService {
         playerIdCache.removeAll()
         lastFetched = nil
         try? FileManager.default.removeItem(at: localCacheURL)
-        print("🗑️ Player photo cache cleared")
     }
     
     /// Get all verified player names from the database
@@ -133,7 +132,6 @@ actor PlayerPhotoService {
         }
         
         do {
-            print("📡 Fetching player database from remote...")
             var request = URLRequest(url: url)
             request.timeoutInterval = 15
             request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -153,8 +151,6 @@ actor PlayerPhotoService {
             lastFetched = Date()
             
             saveLocalCache()
-            
-            print("✅ Loaded \(playerIdCache.count) players from remote database (v\(database.version))")
             
         } catch {
             print("⚠️ Remote fetch error: \(error.localizedDescription)")
@@ -177,7 +173,6 @@ actor PlayerPhotoService {
             let database = try JSONDecoder().decode(RemotePlayerDatabase.self, from: data)
             playerIdCache = database.players
             mergeNameAliases()
-            print("✅ Loaded \(playerIdCache.count) players from local cache")
         } catch {
             print("⚠️ Failed to load local cache: \(error.localizedDescription)")
             loadEmbeddedFallback()
@@ -194,7 +189,6 @@ actor PlayerPhotoService {
         do {
             let data = try JSONEncoder().encode(database)
             try data.write(to: localCacheURL)
-            print("💾 Saved \(playerIdCache.count) players to local cache")
         } catch {
             print("⚠️ Failed to save local cache: \(error.localizedDescription)")
         }
@@ -203,7 +197,6 @@ actor PlayerPhotoService {
     private func loadEmbeddedFallback() {
         playerIdCache = Self.embeddedPlayerIds
         mergeNameAliases()
-        print("📦 Loaded \(playerIdCache.count) players from embedded fallback")
     }
     
     private func mergeNameAliases() {
@@ -269,7 +262,7 @@ actor PlayerPhotoService {
     
     private func getFallbackAvatarURL(firstName: String, lastName: String, teamAbbr: String) -> URL? {
         let fullName = "\(firstName)+\(lastName)"
-        let bgColor = TeamColors.primary[teamAbbr]?.replacingOccurrences(of: "#", with: "") ?? "FF6B35"
+        let bgColor = TeamColors.primary[teamAbbr]?.replacingOccurrences(of: "#", with: "") ?? "0073EF"
         return URL(string: "https://ui-avatars.com/api/?name=\(fullName)&background=\(bgColor)&color=ffffff&size=256&bold=true&format=png")
     }
 }

@@ -8,8 +8,10 @@
 import SwiftUI
 
 struct PlayersView: View {
-    @Binding var favoritePlayerIds: Set<Int>
-    
+    @EnvironmentObject var auth: AuthViewModel
+    let favoritePlayerIds: Set<Int>
+    let onToggleFavorite: (Int) async -> Void
+
     @StateObject private var liveManager = LiveGameManager.shared
     
     @State private var playersWithStats: [PlayerWithStats] = []
@@ -37,7 +39,7 @@ struct PlayersView: View {
                             .font(.system(size: 34, weight: .heavy, design: .rounded))
                             .foregroundStyle(
                                 LinearGradient(
-                                    colors: [Color(hex: "FF6B35"), Color(hex: "F7931E")],
+                                    colors: [Color(hex: "0073EF"), Color.white],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -125,7 +127,7 @@ struct PlayersView: View {
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color(hex: "FF6B35"))
+                            .foregroundStyle(Color.white)
                             .frame(width: 44, height: 44)
                             .background(Color(hex: "1C1C1E"))
                             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -140,7 +142,7 @@ struct PlayersView: View {
                         VStack(spacing: 16) {
                             ProgressView()
                                 .scaleEffect(1.2)
-                                .tint(Color(hex: "FF6B35"))
+                                .tint(Color.white)
                             Text("Loading top players...")
                                 .font(.subheadline)
                                 .foregroundStyle(Color(hex: "8E8E93"))
@@ -150,7 +152,7 @@ struct PlayersView: View {
                         VStack(spacing: 16) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 48))
-                                .foregroundStyle(Color(hex: "FF6B35"))
+                                .foregroundStyle(Color.white)
                             Text(error)
                                 .font(.subheadline)
                                 .foregroundStyle(Color(hex: "8E8E93"))
@@ -159,7 +161,7 @@ struct PlayersView: View {
                                 Task { await loadPlayers() }
                             }
                             .font(.headline)
-                            .foregroundStyle(Color(hex: "FF6B35"))
+                            .foregroundStyle(Color.white)
                         }
                         .padding()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -229,6 +231,32 @@ struct PlayersView: View {
                     liveManager.startTracking(playerIds: favoritePlayerIds)
                 }
             }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if let displayName = auth.currentUserDisplayName {
+                            Text(displayName)
+                                .font(.headline)
+                        } else if let email = auth.currentUserEmail {
+                            Text(email)
+                                .font(.caption)
+                        }
+                        if let email = auth.currentUserEmail {
+                            Text(email)
+                                .font(.caption)
+                                .foregroundStyle(AppColors.secondaryText)
+                        }
+                        Button(role: .destructive) {
+                            Task { await auth.signOut() }
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } label: {
+                        Image(systemName: "person.circle.fill")
+                            .foregroundStyle(Color.white)
+                    }
+                }
+            }
         }
     }
     
@@ -283,10 +311,11 @@ struct PlayersView: View {
         errorMessage = nil
         
         do {
-            playersWithStats = try await LiveScoresAPI.shared.fetchPlayersWithStats()
+            // Load from Supabase reference data (no API-Sports fallback).
+            playersWithStats = try await SupabaseNBAService.shared.fetchPlayersWithStats()
             applyFiltersAndSort()
         } catch {
-            errorMessage = "Failed to load players.\nPlease check your connection."
+            errorMessage = "Failed to load players from Supabase.\nPlease check your connection."
         }
         
         isLoading = false
@@ -349,11 +378,7 @@ struct PlayersView: View {
     }
     
     private func toggleFavorite(_ player: NBAPlayer) {
-        if favoritePlayerIds.contains(player.id) {
-            favoritePlayerIds.remove(player.id)
-        } else {
-            favoritePlayerIds.insert(player.id)
-        }
+        Task { await onToggleFavorite(player.id) }
     }
 }
 
@@ -446,7 +471,7 @@ struct PlayerRowView: View {
                                 .foregroundStyle(Color(hex: "3A3A3C"))
                             Text(String(format: "%.1f FPPG", avg.fantasyScore))
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(Color(hex: "FF6B35"))
+                                .foregroundStyle(Color.white)
                         }
                     }
                 }
@@ -656,5 +681,6 @@ extension Color {
 }
 
 #Preview {
-    PlayersView(favoritePlayerIds: .constant([]))
+    PlayersView(favoritePlayerIds: [], onToggleFavorite: { _ in })
+        .environmentObject(AuthViewModel())
 }
